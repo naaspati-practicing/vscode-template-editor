@@ -34,6 +34,7 @@ import sam.fx.helpers.FxFxml;
 import sam.fx.helpers.FxGridPane;
 import sam.fx.helpers.FxHBox;
 import sam.fx.helpers.FxUtils;
+import sam.pkg.JsonFile.Key;
 import sam.reference.WeakAndLazy;
 // import sam.fx.helpers.IconButton;
 public class Editor extends GridPane  {
@@ -53,6 +54,8 @@ public class Editor extends GridPane  {
 		r.setFillHeight(true);
 		r.setVgrow(Priority.ALWAYS);
 		FxGridPane.setRowConstraint(this, GridPane.getRowIndex(bodyTA), r);
+		
+		idTF.setEditable(false);
 		
 		setDisable(true);
 	}
@@ -103,7 +106,7 @@ public class Editor extends GridPane  {
 			descriptionTA.setText(get(o, DESCRIPTION));
 			bodyTA.setText(get(o, BODY));	
 
-			idTF.setText(n.entryId);
+			idTF.setText(n.id);
 			Changes c = CACHE.get(n);
 
 			if(c != null) {

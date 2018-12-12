@@ -18,6 +18,7 @@ import sam.fx.helpers.FxCell;
 import sam.fx.helpers.FxFxml;
 import sam.fx.helpers.FxTextSearch;
 import sam.myutils.Checker;
+import sam.pkg.JsonFile.Key;
 
 public class Adder {
 	private Stage stage = new Stage();
@@ -46,7 +47,7 @@ public class Adder {
 		searcher.applyFilter(similar.getItems());
 		Platform.runLater(() -> {
 			String s = search.getText();
-			ok.setDisable(Checker.isEmptyTrimmed(s) || similar.getItems().stream().anyMatch(f -> f.entryId.equals(s)));
+			ok.setDisable(Checker.isEmptyTrimmed(s) || similar.getItems().stream().anyMatch(f -> f.id.equals(s)));
 		});
 	};
 	public String newId(Collection<Key> allkeys) {

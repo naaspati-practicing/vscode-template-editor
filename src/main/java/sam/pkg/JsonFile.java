@@ -9,9 +9,8 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
+import java.util.Objects;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -31,7 +30,8 @@ public class JsonFile implements Closeable {
 	private boolean exists, keysModified, jsonFileModified;
 	private Throwable error;
 	private JSONObject parsed;
-	private Map<String, JSONObject> newEntries;
+	private JSONObject newEntries;
+	private List<Key> keys, keys2;
 
 	public static final String PREFIX = "prefix";
 	public static final String BODY = "body";
@@ -86,51 +86,61 @@ public class JsonFile implements Closeable {
 	}
 	public void remove(Key key) {
 		init();
-		if(keys.remove(key))
+		String id = key.id;
+		if(keys.removeIf(s -> s.id.equals(id)))
 			keysModified = true;
-		
-		if(parsed.remove(key.entryId) != null) {
+
+		if(parsed.remove(id) != null) {
 			jsonFileModified = true;
 			System.out.println("removed(JSON): "+new JSONObject(key));
 		}
-		if(newEntries != null &&  newEntries.remove(key.entryId) != null) 
+		remove_new(key);
+	}
+	private void remove_new(Key key) {
+		String id = key.id;
+
+		if(keys2 != null)
+			keys2.removeIf(s -> s.id.equals(id));
+
+		if(newEntries != null &&  newEntries.remove(id) != null) 
 			System.out.println("removed(TEMP): "+new JSONObject(key));
 	}
 	public Key add(String id) {
 		if(newEntries == null)
-			newEntries = new HashMap<>();
+			newEntries = new JSONObject();
 
 		JSONObject e = new JSONObject();
+		e.put(PREFIX, id);
+		e.put(BODY, id);
+
+		Key k = new Key(id, id);
 		newEntries.put(id, e);
-		Key k = new Key(this, id, id);
-		keys.add(k);
-		System.out.println("temp-added: "+new JSONObject(k));
-		keysModified = true;
+
+		System.out.println("temp-added: \""+id+"\": "+e);
 		return k;
 	}
-	private List<Key> keys;
 
 	public Stream<Key> getKeys() {
 		if(keys != null)
-			return keys.stream();
+			return keys2 == null ? keys.stream() : Stream.concat(keys.stream(), keys2.stream());
 
-		if(modified()) 
-			init();
-		else {
-			Path p = keysPath();
-			if(Files.notExists(p))
+			if(modified()) 
 				init();
 			else {
-				try {
-					keys = Files.lines(p).map(s -> StringUtils.split(s, '\t')).map(s -> new Key(this, s[0], s[1])).collect(Collectors.toList());
-				} catch (IOException e) {
-					error = e;
-					return Stream.empty();
+				Path p = keysPath();
+				if(Files.notExists(p))
+					init();
+				else {
+					try {
+						keys = Files.lines(p).map(s -> StringUtils.split(s, '\t')).map(s -> new Key(s[0], s[1])).collect(Collectors.toList());
+					} catch (IOException e) {
+						error = e;
+						return Stream.empty();
+					}
 				}
 			}
-		}
 
-		return keys == null ? Stream.empty() : keys.stream();
+			return keys == null ? Stream.empty() : keys.stream();
 	}
 	private Path keysPath() {
 		return Main.CACHE_DIR.resolve(id+".keys");
@@ -153,12 +163,12 @@ public class JsonFile implements Closeable {
 		keys = new ArrayList<>((int)(parsed.length()*1.5));
 
 		parsed.keySet()
-		.forEach(s -> {
-			keys.add(new Key(this, s, s));
-			String s2 = get(parsed.getJSONObject(s), PREFIX);
-			if(!s.equals(s2))
-				keys.add(new Key(this, s2, s));
-		});
+		.forEach(s -> addKey(s, get(parsed.getJSONObject(s), PREFIX)));
+	}
+	private void addKey(String s, String s2) {
+		keys.add(new Key(s, s));
+		if(!s.equals(s2))
+			keys.add(new Key(s2, s));
 	}
 	@Override
 	public void close() throws IOException {
@@ -166,7 +176,7 @@ public class JsonFile implements Closeable {
 
 		if(keysModified) {
 			StringBuilder sb = new StringBuilder();
-			keys.forEach(k -> sb.append(k.key).append('\t').append(k.entryId).append('\n'));
+			keys.forEach(k -> sb.append(k.key).append('\t').append(k.id).append('\n'));
 			Path  p = keysPath();
 			StringWriter2.setText(p, sb);
 			System.out.println("saved: "+Main.relativeToSelfDir(p));
@@ -182,19 +192,66 @@ public class JsonFile implements Closeable {
 	}
 	public JSONObject jsonObject(Key key) {
 		init();
-		JSONObject o = newEntries == null ? null : newEntries.get(key.entryId);
+		JSONObject o = newEntries == null || !newEntries.has(key.id) ? null : newEntries.getJSONObject(key.id);
 		if(o != null)
 			return o;
-		return parsed.getJSONObject(key.entryId);
+		return parsed.getJSONObject(key.id);
 	}
 	public Throwable error() {
 		return error;
 	}
 	public void setSaved(Key key) {
-		jsonFileModified = true;
+		JSONObject o = newEntries == null ? null : (JSONObject)newEntries.remove(key.id);
+		remove_new(key);
 
-		JSONObject o = newEntries == null ? null : newEntries.remove(key.entryId);
-		if(o != null)
-			parsed.put(key.entryId, o);
+		if(o != null) {
+			jsonFileModified = true;
+
+			String id = key.id;
+			parsed.put(id, o);
+			addKey(id, get(o, PREFIX));
+			keysModified = true;
+		}
+	}
+
+	public class Key {
+		public final String key,key_lower, id;
+
+		private Key(String key, String id) {
+			this.key = key;
+			key_lower = key.toLowerCase();
+			this.id = id;
+		}
+
+		@Override
+		public String toString() {
+			return key;
+		}
+
+		public JSONObject object() {
+			return jsonObject(this);
+		}
+		public void remove() {
+			JsonFile.this.remove(this);
+		}
+		public void setSaved() {
+			JsonFile.this.setSaved(this);
+		}
+
+		@Override
+		public int hashCode() {
+			return key.hashCode();
+		}
+		@Override
+		public boolean equals(Object obj) {
+			if (this == obj)
+				return true;
+			if (obj == null)
+				return false;
+			if (getClass() != obj.getClass())
+				return false;
+			Key other = (Key) obj;
+			return Objects.equals(key, other.key);
+		}
 	}
 }

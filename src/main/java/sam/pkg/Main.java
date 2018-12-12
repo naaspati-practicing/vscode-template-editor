@@ -33,6 +33,7 @@ import sam.io.serilizers.ObjectReader;
 import sam.io.serilizers.ObjectWriter;
 import sam.myutils.MyUtilsException;
 import sam.myutils.System2;
+import sam.pkg.JsonFile.Key;
 
 // import sam.fx.helpers.FxConstants;
 
@@ -134,7 +135,7 @@ public class Main extends Application {
 			listEntries.clear();
 		else {
 			Stream<Key> keys = n.getKeys();
-			listEntries.setAll(keys.filter(s -> s.entryId.equals(s.key)).collect(Collectors.toList()));
+			listEntries.setAll(keys.filter(s -> s.id.equals(s.key)).collect(Collectors.toList()));
 
 			if(n.hasError()) {
 				FxAlert.showErrorDialog(n.path, "failed loading file", n.error());
