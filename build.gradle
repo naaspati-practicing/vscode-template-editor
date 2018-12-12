@@ -1,0 +1,66 @@
+apply plugin: 'java'
+apply plugin: 'application'
+
+repositories {
+    jcenter()
+}
+
+mainClassName = 'sam.pkg.Main'
+
+version = '.002'
+ext.appdir = file(/C:\Users\Sameer\Documents\MEGAsync\SimpleUtils\sam\programs\template\bin/)
+run {
+  environment['snippets_dir'] = 'C:\\Users\\Sameer\\.vscode\\extensions\\mrmlnc.vscode-jade-snippets-1.0.1\\snippets'
+  environment['SELF_DIR'] = appdir.parent
+}
+
+dependencies {
+    compile 'org.json:json:20180813'
+    compile files('myutils.jar')
+}
+
+task deleteJars {
+  delete fileTree(appdir) {
+    include '*.jar'
+  }
+}
+
+task install(type: Copy, dependsOn:[installDist, deleteJars]) {
+  def libdir = file(new File(installDist.destinationDir, 'lib')) 
+  from libdir
+  into appdir
+  
+  doLast {
+     new File(appdir, 'run.cmd').text = """
+  @echo off
+  setlocal
+  
+  ${versionText()}
+  
+  java %JVM_OPTS% %JAVA_OPTS% -cp \"%~dp0;%~dp0${String.join(';%~dp0', libdir.list())}\" ${mainClassName} %*
+  
+  """.stripIndent()
+  } 
+}
+
+def versionText() {
+  if(!version && version == 'unspecified') return '';
+  return """
+  SET APP_VERSION=${version}
+  if [%1]==[-v] (
+    echo version: %APP_VERSION%
+    goto:eof
+  )
+  if [%1]==[--version] (
+    echo version: %APP_VERSION%
+    goto:eof
+  )
+  """;    
+}
+
+jar {
+  exclude '*.fxgraph'
+}
+
+defaultTasks 'install'
+
