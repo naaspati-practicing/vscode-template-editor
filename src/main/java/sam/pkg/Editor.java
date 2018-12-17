@@ -1,17 +1,12 @@
 package sam.pkg;
 import static sam.myutils.Checker.isEmptyTrimmed;
-import static sam.pkg.JsonFile.BODY;
-import static sam.pkg.JsonFile.DESCRIPTION;
-import static sam.pkg.JsonFile.PREFIX;
-import static sam.pkg.JsonFile.get;
 
 import java.io.IOException;
 import java.util.IdentityHashMap;
 import java.util.Objects;
 
-import org.json.JSONObject;
-
-import javafx.beans.property.ReadOnlyObjectProperty;
+import javafx.beans.binding.ObjectBinding;
+import javafx.beans.value.ObservableObjectValue;
 import javafx.event.ActionEvent;
 import javafx.event.Event;
 import javafx.event.EventHandler;
@@ -34,7 +29,7 @@ import sam.fx.helpers.FxFxml;
 import sam.fx.helpers.FxGridPane;
 import sam.fx.helpers.FxHBox;
 import sam.fx.helpers.FxUtils;
-import sam.pkg.JsonFile.Key;
+import sam.pkg.JsonFile.Template;
 import sam.reference.WeakAndLazy;
 // import sam.fx.helpers.IconButton;
 public class Editor extends GridPane  {
@@ -71,18 +66,17 @@ public class Editor extends GridPane  {
 	}
 
 	private void saveAction(Event e) {
-		currentJO.put(PREFIX, prefix());
-		currentJO.put(BODY, body());
-		currentJO.put(DESCRIPTION, desp());
+		current.prefix(prefix());
+		current.body(body());
+		current.description(desp());
 
-		current.setSaved();
+		current.saved();
 	}
 
-	private static final IdentityHashMap<Key, Changes> CACHE = new IdentityHashMap<>();
-	private Key current;
-	private JSONObject currentJO;
+	private static final IdentityHashMap<Template, Changes> CACHE = new IdentityHashMap<>();
+	private Template current;
 
-	private void change(Key n) {
+	private void change(Template n) {
 		if(current != null) 
 			CACHE.put(current, new Changes());
 
@@ -94,19 +88,15 @@ public class Editor extends GridPane  {
 			set(descriptionTA, null);
 			set(bodyTA, null);
 
-			currentJO = null;
 			this.setDisable(true);
-
 		} else {
-			JSONObject o = n.object();
-			currentJO = o;
 			this.setDisable(false);
 
-			prefixTF.setText(get(o, PREFIX));
-			descriptionTA.setText(get(o, DESCRIPTION));
-			bodyTA.setText(get(o, BODY));	
+			prefixTF.setText(n.prefix());
+			descriptionTA.setText(n.description());
+			bodyTA.setText(n.body());	
 
-			idTF.setText(n.id);
+			idTF.setText(n.id());
 			Changes c = CACHE.get(n);
 
 			if(c != null) {
@@ -150,8 +140,8 @@ public class Editor extends GridPane  {
 	private boolean empty(String text) {
 		return isEmptyTrimmed(text);
 	}
-	public void init(ReadOnlyObjectProperty<Key> selectedItemProperty, Button saveBtn) {
-		selectedItemProperty.addListener((p, o, n) -> change(n));
+	public void init(ObservableObjectValue<Template> templateBinding, Button saveBtn) {
+		templateBinding.addListener((p, o, n) -> change(n));
 		this._saveBtn = saveBtn;
 		if(saveBtn != null) {
 			saveBtn.setOnAction(this::saveAction);

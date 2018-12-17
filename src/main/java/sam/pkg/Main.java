@@ -33,7 +33,7 @@ import sam.io.serilizers.ObjectReader;
 import sam.io.serilizers.ObjectWriter;
 import sam.myutils.MyUtilsException;
 import sam.myutils.System2;
-import sam.pkg.JsonFile.Key;
+import sam.pkg.JsonFile.Template;
 
 // import sam.fx.helpers.FxConstants;
 
@@ -51,7 +51,7 @@ public class Main extends Application {
 
 	@FXML private SplitPane listSplit;
 	@FXML private ListView2<JsonFile> listJson;
-	@FXML private ListView2<Key> listEntries;
+	@FXML private ListView2<Template> listEntries;
 	@FXML private Button saveBtn;
 	@FXML private Button addBtn;
 	@FXML private Button openButton;
@@ -63,7 +63,7 @@ public class Main extends Application {
 	private final Path cache_meta_path = SELF_DIR.resolve("cache_meta.dat");
 
 	MultipleSelectionModel<JsonFile> smJson;
-	MultipleSelectionModel<Key> smKeys;
+	MultipleSelectionModel<Template> smTemplates;
 	private static Stage stage;
 
 	@Override
@@ -75,10 +75,10 @@ public class Main extends Application {
 
 		smJson = listJson.selectionModel();
 		smJson.setSelectionMode(SelectionMode.SINGLE);
-		smKeys = listEntries.selectionModel();
-		smKeys.setSelectionMode(SelectionMode.MULTIPLE);
+		smTemplates = listEntries.selectionModel();
+		smTemplates.setSelectionMode(SelectionMode.MULTIPLE);
 		listSplit.setDividerPositions(0.5);
-		editor.init(smKeys.selectedItemProperty(), saveBtn);
+		editor.init(smTemplates.selectedItemProperty(), saveBtn);
 
 		FxPopupShop.setParent(stage);
 		FxAlert.setParent(stage);
@@ -105,7 +105,7 @@ public class Main extends Application {
 				if(!c.exists())
 					return;
 				
-				jsonFiles.put(c.path, c);
+				jsonFiles.put(c.jsonFilePath, c);
 				maxId[0] = Math.max(maxId[0], c.id); 
 			});
 			maxId[0]++;
@@ -129,16 +129,20 @@ public class Main extends Application {
 		.sorted(Comparator.<JsonFile>comparingLong(c -> c.lastModified()).reversed())
 		.forEach(jsonFiles()::add);
 	}
+	
+	private final List<Template> _temp_list = new ArrayList<>();
+	
 	private void jsonChange(JsonFile n) {
-		smKeys.clearSelection();
+		smTemplates.clearSelection();
 		if(n == null)
 			listEntries.clear();
 		else {
-			Stream<Key> keys = n.getKeys();
-			listEntries.setAll(keys.filter(s -> s.id.equals(s.key)).collect(Collectors.toList()));
+			_temp_list.clear();
+			listEntries.setAll(n.getTemplates().collect(Collectors.toCollection(() -> _temp_list)));
+			_temp_list.clear();
 
 			if(n.hasError()) {
-				FxAlert.showErrorDialog(n.path, "failed loading file", n.error());
+				FxAlert.showErrorDialog(n.jsonFilePath, "failed loading file", n.error());
 				smJson.clearSelection();
 				jsonFiles().remove(n);
 				return;
@@ -151,7 +155,7 @@ public class Main extends Application {
 			try {
 				jf.close();
 			} catch (IOException e) {
-				System.err.println(jf.path);
+				System.err.println(jf.jsonFilePath);
 				e.printStackTrace();
 			}
 		});
@@ -163,33 +167,33 @@ public class Main extends Application {
 	}
 	@FXML
 	private void openAction(Event e) {
-		FileOpenerNE.openFileLocationInExplorer(json().path.toFile());
+		FileOpenerNE.openFileLocationInExplorer(json().jsonFilePath.toFile());
 	}
 	@FXML
 	private void removeAction(Event e) {
-		ArrayList<Key> keys = new ArrayList<>(smKeys.getSelectedItems());
+		ArrayList<Template> keys = new ArrayList<>(smTemplates.getSelectedItems());
 		if(keys.isEmpty()) return;
 		if(this.keys != null)
 			this.keys.removeAll(keys);
-		smKeys.clearSelection();
-		keys.forEach(Key::remove);
+		smTemplates.clearSelection();
+		keys.forEach(Template::remove);
 	}
 	private Adder adder;
-	private List<Key> keys;
+	private List<Template> keys;
 
 	@FXML
 	private void addAction(Event e) {
 		if(adder == null)
 			adder = MyUtilsException.noError(() -> new Adder(stage));
 
-		keys = keys != null ? keys : jsonFiles().stream().flatMap(f -> f.getKeys()).collect(Collectors.toList());
+		keys = keys != null ? keys : jsonFiles().stream().flatMap(f -> f.getTemplates()).collect(Collectors.toList());
 		JsonFile f = json();
 		if(f.hasError()) 
 			smJson.clearSelection();
 
 		jsonFiles().removeIf(j -> {
 			if(j.hasError()) {
-				FxAlert.showErrorDialog(j.path, "failed loading file", j.error());
+				FxAlert.showErrorDialog(j.jsonFilePath, "failed loading file", j.error());
 				return true;
 			}
 			return false;
@@ -203,17 +207,17 @@ public class Main extends Application {
 			FxPopupShop.showHidePopup("cancelled", 1500);
 			return;
 		}
-		Key key = f.add(id);
+		Template key = f.add(id, template());
 		keys.add(key);
 		listEntries.getItems().add(key);
-		smKeys.clearAndSelect(listEntries.getItems().size() - 1);
+		smTemplates.clearAndSelect(listEntries.getItems().size() - 1);
 	}
 
 	public JsonFile json() {
 		return smJson.getSelectedItem();
 	}
-	public Key key() {
-		return smKeys.getSelectedItem();
+	public Template template() {
+		return smTemplates.getSelectedItem();
 	}
 
 	public static final int snippet_dir_count = SNIPPET_DIR.getNameCount();

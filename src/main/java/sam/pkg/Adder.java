@@ -14,19 +14,20 @@ import javafx.stage.Modality;
 import javafx.stage.Stage;
 import javafx.stage.StageStyle;
 import javafx.stage.Window;
+import sam.fx.helpers.FxBindings;
 import sam.fx.helpers.FxCell;
 import sam.fx.helpers.FxFxml;
 import sam.fx.helpers.FxTextSearch;
 import sam.myutils.Checker;
-import sam.pkg.JsonFile.Key;
+import sam.pkg.JsonFile.Template;
 
 public class Adder {
 	private Stage stage = new Stage();
 	@FXML private Editor editor;
-	@FXML private ListView<Key> similar;
+	@FXML private ListView<TemplateWrap> similar;
 	@FXML private TextField search;
 	@FXML private Button ok;
-	private FxTextSearch<Key> searcher = new FxTextSearch<>(f -> f.key_lower, 300, true);
+	private FxTextSearch<TemplateWrap> searcher = new FxTextSearch<>(f -> f.key_lower, 300, true);
 	
 	public Adder(Window owner) throws IOException {
 		FxFxml.load(this, stage, this);
@@ -38,7 +39,7 @@ public class Adder {
 		ok.setOnAction(this::okAction);
 		
 		similar.setCellFactory(FxCell.listCell(k -> k.key));
-		editor.init(similar.getSelectionModel().selectedItemProperty(), null);
+		editor.init(FxBindings.<TemplateWrap, Template>map(similar.getSelectionModel().selectedItemProperty(), t -> t.template), null);
 		editor.setDisable(true);
 	}
 	
@@ -47,10 +48,11 @@ public class Adder {
 		searcher.applyFilter(similar.getItems());
 		Platform.runLater(() -> {
 			String s = search.getText();
-			ok.setDisable(Checker.isEmptyTrimmed(s) || similar.getItems().stream().anyMatch(f -> f.id.equals(s)));
+			ok.setDisable(Checker.isEmptyTrimmed(s) || similar.getItems().stream().anyMatch(f -> f.template.id().equals(s)));
 		});
 	};
-	public String newId(Collection<Key> allkeys) {
+	//TODO
+	public String newId(Collection<Template> allkeys) {
 		similar.getItems().setAll(allkeys);
 		searcher.setAllData(allkeys);
 		searcher.setOnChange(onchange);
@@ -67,10 +69,20 @@ public class Adder {
 		
 		return result;
 	}
-	
 	private void okAction(ActionEvent e) {
 		result = search.getText();
 		stage.hide();
 	}
-
+	
+	private class TemplateWrap {
+		final String key;
+		final String key_lower;
+		final Template template;
+		
+		TemplateWrap(String key, Template template) {
+			this.template = template;
+			this.key = key;
+			this.key_lower = key.toLowerCase();
+		}
+	}
 }
