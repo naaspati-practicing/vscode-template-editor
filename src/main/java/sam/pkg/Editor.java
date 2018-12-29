@@ -5,7 +5,6 @@ import java.io.IOException;
 import java.util.IdentityHashMap;
 import java.util.Objects;
 
-import javafx.beans.binding.ObjectBinding;
 import javafx.beans.value.ObservableObjectValue;
 import javafx.event.ActionEvent;
 import javafx.event.Event;
@@ -29,7 +28,7 @@ import sam.fx.helpers.FxFxml;
 import sam.fx.helpers.FxGridPane;
 import sam.fx.helpers.FxHBox;
 import sam.fx.helpers.FxUtils;
-import sam.pkg.JsonFile.Template;
+import sam.pkg.jsonfile.JsonFile.Template;
 import sam.reference.WeakAndLazy;
 // import sam.fx.helpers.IconButton;
 public class Editor extends GridPane  {
@@ -70,7 +69,7 @@ public class Editor extends GridPane  {
 		current.body(body());
 		current.description(desp());
 
-		current.saved();
+		current.save();
 	}
 
 	private static final IdentityHashMap<Template, Changes> CACHE = new IdentityHashMap<>();

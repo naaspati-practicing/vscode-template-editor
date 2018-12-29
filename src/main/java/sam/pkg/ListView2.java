@@ -14,15 +14,12 @@ import sam.fx.helpers.FxConstants;
 
 public class ListView2<T> extends BorderPane {
 	private final ListView<T> list = new ListView<>();
-	//TODO private final TextField search = new TextField();
 	
 	public ListView2(@NamedArg("title") String title) {
 		Text titlet = new Text(title);
 		setTop(titlet);
 		setCenter(list);
-		//TODO setBottom(search);
 		
-		//TODO 	BorderPane.setMargin(search, FxConstants.INSETS_5);
 		BorderPane.setMargin(titlet, FxConstants.INSETS_5);
 	}
 	

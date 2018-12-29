@@ -1,7 +1,9 @@
 package sam.pkg;
 
 import java.io.IOException;
-import java.util.Collection;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.logging.Logger;
 
 import javafx.application.Platform;
 import javafx.beans.InvalidationListener;
@@ -18,10 +20,13 @@ import sam.fx.helpers.FxBindings;
 import sam.fx.helpers.FxCell;
 import sam.fx.helpers.FxFxml;
 import sam.fx.helpers.FxTextSearch;
+import sam.logging.MyLoggerFactory;
 import sam.myutils.Checker;
-import sam.pkg.JsonFile.Template;
+import sam.pkg.jsonfile.JsonFile.Template;
 
 public class Adder {
+	private static final Logger LOGGER = MyLoggerFactory.logger(Adder.class);
+	
 	private Stage stage = new Stage();
 	@FXML private Editor editor;
 	@FXML private ListView<TemplateWrap> similar;
@@ -31,6 +36,7 @@ public class Adder {
 	
 	public Adder(Window owner) throws IOException {
 		FxFxml.load(this, stage, this);
+		LOGGER.fine(() -> "initialized: "+Adder.class.getName());
 		
 		stage.initModality(Modality.APPLICATION_MODAL);
 		stage.initOwner(owner);
@@ -51,11 +57,20 @@ public class Adder {
 			ok.setDisable(Checker.isEmptyTrimmed(s) || similar.getItems().stream().anyMatch(f -> f.template.id().equals(s)));
 		});
 	};
-	//TODO
-	public String newId(Collection<Template> allkeys) {
-		similar.getItems().setAll(allkeys);
-		searcher.setAllData(allkeys);
+	
+	private final List<TemplateWrap> allData = new ArrayList<>();
+	
+	public String newId(List<Template> templates) {
+		allData.clear();
+		templates.forEach(t -> {
+			allData.add(new TemplateWrap(t.id(), t));
+			if(!t.id().equals(t.prefix()))
+				allData.add(new TemplateWrap(t.prefix(), t));
+		});
+		similar.getItems().setAll(allData);
+		searcher.setAllData(allData);
 		searcher.setOnChange(onchange);
+		allData.clear();
 		
 		InvalidationListener iv = i -> searcher.addSearch(search.getText());
 		search.textProperty().addListener(iv);
@@ -66,6 +81,7 @@ public class Adder {
 		searcher.setOnChange(null);
 		searcher.setAllData(null);
 		search.setText(null);
+		allData.clear();
 		
 		return result;
 	}

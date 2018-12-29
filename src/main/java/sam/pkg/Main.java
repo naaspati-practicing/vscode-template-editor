@@ -1,15 +1,12 @@
 package sam.pkg;
 
-import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.HashMap;
 import java.util.List;
+import java.util.logging.Logger;
 import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
 import javafx.application.Application;
 import javafx.beans.binding.Bindings;
@@ -23,22 +20,23 @@ import javafx.scene.control.SelectionMode;
 import javafx.scene.control.SplitPane;
 import javafx.stage.Stage;
 import javafx.stage.Window;
-import sam.console.ANSI;
 import sam.fx.alert.FxAlert;
 import sam.fx.helpers.FxFxml;
 import sam.fx.popup.FxPopupShop;
 import sam.io.fileutils.FileOpenerNE;
-import sam.io.fileutils.FilesUtilsIO;
-import sam.io.serilizers.ObjectReader;
-import sam.io.serilizers.ObjectWriter;
+import sam.logging.MyLoggerFactory;
 import sam.myutils.MyUtilsException;
 import sam.myutils.System2;
-import sam.pkg.JsonFile.Template;
+import sam.pkg.jsonfile.JsonFile;
+import sam.pkg.jsonfile.JsonFile.Template;
+import sam.pkg.jsonfile.JsonFiles;
 
 // import sam.fx.helpers.FxConstants;
 
 public class Main extends Application {
-	private final static Path SNIPPET_DIR = Paths.get(System2.lookup("snippets_dir"));
+	private static final Logger LOGGER = MyLoggerFactory.logger(Main.class);
+	
+	public final static Path SNIPPET_DIR = Paths.get(System2.lookup("snippets_dir"));
 
 	public static void main(String[] args) {
 		if(Files.notExists(SNIPPET_DIR)) {
@@ -57,10 +55,14 @@ public class Main extends Application {
 	@FXML private Button openButton;
 	@FXML private 	Label metaLabel;
 	@FXML private Editor editor;
+	
+	private JsonFiles jsonFiles;
 
 	public static final Path SELF_DIR = Paths.get(System2.lookup("SELF_DIR"));
 	public static final Path CACHE_DIR = SELF_DIR.resolve("cache");
-	private final Path cache_meta_path = SELF_DIR.resolve("cache_meta.dat");
+	
+	public static final int snippet_dir_count = SNIPPET_DIR.getNameCount();
+	public static final int self_dir_count = SELF_DIR.getNameCount(); 
 
 	MultipleSelectionModel<JsonFile> smJson;
 	MultipleSelectionModel<Template> smTemplates;
@@ -70,8 +72,9 @@ public class Main extends Application {
 	public void start(Stage stage) throws Exception {
 		Main.stage = stage;
 		FxFxml.load(this, stage, this);
-		System.out.println(ANSI.yellow("SNIPPET_DIR: ")+SNIPPET_DIR);
-		System.out.println(ANSI.yellow("SELF_DIR: ")+SELF_DIR);
+		
+		LOGGER.config(() -> "SNIPPET_DIR: "+SNIPPET_DIR);
+		LOGGER.config(() -> "SELF_DIR: "+SELF_DIR);
 
 		smJson = listJson.selectionModel();
 		smJson.setSelectionMode(SelectionMode.SINGLE);
@@ -90,44 +93,9 @@ public class Main extends Application {
 		stage.setWidth(500);
 		stage.setHeight(500);
 		stage.show();
-
-		load();
-	}
-	@SuppressWarnings("resource")
-	private void load() throws IOException {
-		int maxId[] = {0};
-
-		final HashMap<Path, JsonFile> jsonFiles = new HashMap<>();
-
-		if(Files.exists(cache_meta_path)) {
-			ObjectReader.iterate(cache_meta_path, dis -> {
-				JsonFile c = new JsonFile(dis);
-				if(!c.exists())
-					return;
-				
-				jsonFiles.put(c.jsonFilePath, c);
-				maxId[0] = Math.max(maxId[0], c.id); 
-			});
-			maxId[0]++;
-		} else {
-			FilesUtilsIO.deleteDir(CACHE_DIR);
-		}
-
-		Files.createDirectories(CACHE_DIR);
-
-		Files.walk(SNIPPET_DIR)
-		.filter(f -> Files.isRegularFile(f) && f.getFileName().toString().toLowerCase().endsWith(".json"))
-		.forEach(f -> {
-			jsonFiles.computeIfAbsent(f, f2 -> {
-				System.out.println("new Json: "+relativeToSnippedDir(f));
-				return new JsonFile(maxId[0]++, f, f.toFile().lastModified(), false, true);	
-			});
-		});
-
-		jsonFiles.values()
-		.stream()
-		.sorted(Comparator.<JsonFile>comparingLong(c -> c.lastModified()).reversed())
-		.forEach(jsonFiles()::add);
+		
+		jsonFiles = new JsonFiles();
+		listJson.getItems().setAll(jsonFiles.getFiles());
 	}
 	
 	private final List<Template> _temp_list = new ArrayList<>();
@@ -151,15 +119,7 @@ public class Main extends Application {
 	}
 	@Override
 	public void stop() throws Exception {
-		jsonFiles().forEach(jf -> {
-			try {
-				jf.close();
-			} catch (IOException e) {
-				System.err.println(jf.jsonFilePath);
-				e.printStackTrace();
-			}
-		});
-		ObjectWriter.writeList(cache_meta_path, jsonFiles(), JsonFile::write);
+		jsonFiles.close();
 		super.stop();
 	}
 	private ObservableList<JsonFile> jsonFiles() {
@@ -219,12 +179,9 @@ public class Main extends Application {
 	public Template template() {
 		return smTemplates.getSelectedItem();
 	}
-
-	public static final int snippet_dir_count = SNIPPET_DIR.getNameCount();
 	public static String relativeToSnippedDir(Path path) {
 		return "%SNIPPET_DIR%\\".concat(path.subpath(snippet_dir_count, path.getNameCount()).toString());
 	}
-	public static final int self_dir_count = SELF_DIR.getNameCount(); 
 	public static String relativeToSelfDir(Path path) {
 		return "%SELF_DIR%\\".concat(path.subpath(self_dir_count, path.getNameCount()).toString());
 	}
