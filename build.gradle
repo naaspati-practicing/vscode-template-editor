@@ -8,10 +8,9 @@ repositories {
 mainClassName = 'sam.pkg.Main'
 
 version = '.002'
-ext.appdir = file(/C:\Users\Sameer\Documents\MEGAsync\SimpleUtils\sam\programs\template\bin/)
+ext.appdir = file(/C:\Users\Sameer\Documents\MEGAsync\SimpleUtils\sam\programs\template\app.beta\bin/)
 run {
-  environment['snippets_dir'] = 'C:\\Users\\Sameer\\.vscode\\extensions\\mrmlnc.vscode-jade-snippets-1.0.1\\snippets'
-  environment['SELF_DIR'] = appdir.parent
+  workingDir appdir.parent
 }
 
 dependencies {

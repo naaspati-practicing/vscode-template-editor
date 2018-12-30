@@ -23,7 +23,7 @@ public class JsonFiles implements Closeable {
 	private static final Logger LOGGER = MyLoggerFactory.logger(JsonFiles.class);
 	
 	private final List<JsonFile> files;
-	private final Path cache_meta_path = Main.SELF_DIR.resolve("cache_meta.dat");
+	private final Path cache_meta_path = Paths.get("cache_meta.dat");
 
 	@SuppressWarnings("resource")
 	public JsonFiles() throws IOException {

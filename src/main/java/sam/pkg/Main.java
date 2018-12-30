@@ -1,5 +1,7 @@
 package sam.pkg;
 
+import java.io.IOException;
+import java.net.URISyntaxException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -20,7 +22,9 @@ import javafx.scene.control.SelectionMode;
 import javafx.scene.control.SplitPane;
 import javafx.stage.Stage;
 import javafx.stage.Window;
+import sam.config.LoadConfig;
 import sam.fx.alert.FxAlert;
+import sam.fx.helpers.FxCell;
 import sam.fx.helpers.FxFxml;
 import sam.fx.popup.FxPopupShop;
 import sam.io.fileutils.FileOpenerNE;
@@ -34,11 +38,23 @@ import sam.pkg.jsonfile.JsonFiles;
 // import sam.fx.helpers.FxConstants;
 
 public class Main extends Application {
-	private static final Logger LOGGER = MyLoggerFactory.logger(Main.class);
-	
-	public final static Path SNIPPET_DIR = Paths.get(System2.lookup("snippets_dir"));
+	private static final Logger LOGGER;
+	public final static Path SNIPPET_DIR;
 
-	public static void main(String[] args) {
+	static {
+		try {
+			LoadConfig.load();
+		} catch (URISyntaxException | IOException e) {
+			throw new RuntimeException(e);
+		}
+
+		SNIPPET_DIR = Paths.get(System2.lookup("snippets_dir"));
+		LOGGER = MyLoggerFactory.logger(Main.class);
+	}
+
+	public static void main(String[] args) throws URISyntaxException, IOException {
+
+
 		if(Files.notExists(SNIPPET_DIR)) {
 			System.out.println("SNIPPET_DIR not found: "+SNIPPET_DIR);
 			System.exit(0);
@@ -55,14 +71,11 @@ public class Main extends Application {
 	@FXML private Button openButton;
 	@FXML private 	Label metaLabel;
 	@FXML private Editor editor;
-	
+
 	private JsonFiles jsonFiles;
 
-	public static final Path SELF_DIR = Paths.get(System2.lookup("SELF_DIR"));
-	public static final Path CACHE_DIR = SELF_DIR.resolve("cache");
-	
+	public static final Path CACHE_DIR = Paths.get("cache");
 	public static final int snippet_dir_count = SNIPPET_DIR.getNameCount();
-	public static final int self_dir_count = SELF_DIR.getNameCount(); 
 
 	MultipleSelectionModel<JsonFile> smJson;
 	MultipleSelectionModel<Template> smTemplates;
@@ -72,9 +85,8 @@ public class Main extends Application {
 	public void start(Stage stage) throws Exception {
 		Main.stage = stage;
 		FxFxml.load(this, stage, this);
-		
+
 		LOGGER.config(() -> "SNIPPET_DIR: "+SNIPPET_DIR);
-		LOGGER.config(() -> "SELF_DIR: "+SELF_DIR);
 
 		smJson = listJson.selectionModel();
 		smJson.setSelectionMode(SelectionMode.SINGLE);
@@ -82,6 +94,9 @@ public class Main extends Application {
 		smTemplates.setSelectionMode(SelectionMode.MULTIPLE);
 		listSplit.setDividerPositions(0.5);
 		editor.init(smTemplates.selectedItemProperty(), saveBtn);
+
+		listJson.setCellFactory(FxCell.listCell(json -> relativeToSnippedDir(json.jsonFilePath, false)));
+		listEntries.setCellFactory(FxCell.listCell(Template::id));
 
 		FxPopupShop.setParent(stage);
 		FxAlert.setParent(stage);
@@ -93,13 +108,13 @@ public class Main extends Application {
 		stage.setWidth(500);
 		stage.setHeight(500);
 		stage.show();
-		
+
 		jsonFiles = new JsonFiles();
 		listJson.getItems().setAll(jsonFiles.getFiles());
 	}
-	
+
 	private final List<Template> _temp_list = new ArrayList<>();
-	
+
 	private void jsonChange(JsonFile n) {
 		smTemplates.clearSelection();
 		if(n == null)
@@ -180,10 +195,13 @@ public class Main extends Application {
 		return smTemplates.getSelectedItem();
 	}
 	public static String relativeToSnippedDir(Path path) {
-		return "%SNIPPET_DIR%\\".concat(path.subpath(snippet_dir_count, path.getNameCount()).toString());
+		return relativeToSnippedDir(path, true);
 	}
-	public static String relativeToSelfDir(Path path) {
-		return "%SELF_DIR%\\".concat(path.subpath(self_dir_count, path.getNameCount()).toString());
+	public static String relativeToSnippedDir(Path path, boolean prefix) {
+		if(prefix)
+			return "%SNIPPET_DIR%\\".concat(path.subpath(snippet_dir_count, path.getNameCount()).toString());
+		else
+			return path.subpath(snippet_dir_count, path.getNameCount()).toString();
 	}
 	public static Window stage() {
 		return stage;

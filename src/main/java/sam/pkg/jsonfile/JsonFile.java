@@ -158,7 +158,7 @@ public class JsonFile implements Closeable {
 
 					data.add(t);
 				}
-				System.out.println("loaded: "+Main.relativeToSelfDir(p));
+				System.out.println("loaded: "+p);
 			} catch (IOException e) {
 				data = null;
 				e.printStackTrace();
@@ -423,7 +423,7 @@ public class JsonFile implements Closeable {
 
 			}
 		}
-		System.out.println(ANSI.green("saved: ")+Main.relativeToSelfDir(p));
+		System.out.println(ANSI.green("saved: ")+p);
 		modified = true;
 	}
 
@@ -508,7 +508,7 @@ public class JsonFile implements Closeable {
 					dos.writeLong(pos.end);
 				}
 			}
-			System.out.println(ANSI.green("saved: ")+Main.relativeToSelfDir(p));
+			System.out.println(ANSI.green("saved: ")+p);
 		}
 	}
 	public Throwable error() {
