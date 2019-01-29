@@ -1,5 +1,4 @@
 package sam.pkg.jsonfile;
-import static java.nio.charset.CodingErrorAction.REPORT;
 import static java.nio.file.StandardOpenOption.CREATE;
 import static java.nio.file.StandardOpenOption.READ;
 import static java.nio.file.StandardOpenOption.TRUNCATE_EXISTING;
@@ -15,14 +14,13 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.io.Reader;
+import java.io.UncheckedIOException;
 import java.nio.ByteBuffer;
 import java.nio.CharBuffer;
 import java.nio.channels.FileChannel;
-import java.nio.charset.Charset;
 import java.nio.charset.CharsetDecoder;
 import java.nio.charset.CharsetEncoder;
 import java.nio.charset.CoderResult;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -36,13 +34,12 @@ import org.json.JSONObject;
 import org.json.JSONTokener;
 
 import sam.console.ANSI;
+import sam.pkg.App;
 import sam.pkg.Main;
 import sam.string.StringWriter2;
 import sam.string.SubSequence;
 
 public class JsonFile implements Closeable {
-	// private static final Logger LOGGER = MyLoggerFactory.logger(JsonFile.class);
-
 	public final Path jsonFilePath;
 	private long lastModified;
 	public final int id;
@@ -59,31 +56,7 @@ public class JsonFile implements Closeable {
 	public static final String BODY = "body";
 	public static final String DESCRIPTION = "description";
 	private int save_request;
-
-	private static final Charset CHARSET = StandardCharsets.UTF_8;
-	private static final ByteBuffer _BUFFER = ByteBuffer.allocate(1024*8);
-	private static final CharBuffer _CHARS = CharBuffer.allocate(1024);
-	private CharsetEncoder ENCODER;
-	private CharsetDecoder DECODER;
-
-	private static final StringWriter2 _TEMPLATE_WRITER = new StringWriter2();
-	private static final JSONObject  TEMPLATE_JSON = new JSONObject();
-
-	private CharBuffer charBuffer() {
-		if(_CHARS.remaining() != _CHARS.capacity())
-			throw new IllegalStateException(String.valueOf(_CHARS.remaining()));
-		return _CHARS;
-	}
-	private StringWriter2 templateWriter() {
-		if(_TEMPLATE_WRITER.getBuilder().length() != 0)
-			throw new IllegalStateException(String.valueOf(_TEMPLATE_WRITER.getBuilder().length()));
-		return _TEMPLATE_WRITER;
-	}
-	private ByteBuffer buffer() {
-		if(_BUFFER.remaining() != _BUFFER.capacity())
-			throw new IllegalStateException(String.valueOf(_BUFFER.remaining()));
-		return _BUFFER;
-	}
+	private static final Resource resource = Resource.getInstance();
 
 	JsonFile(int id, Path jsonFilePath, long oldLastModified) throws IOException {
 		this.jsonFilePath = jsonFilePath;
@@ -105,7 +78,6 @@ public class JsonFile implements Closeable {
 	private void delete(Path p) throws IOException {
 		if(Files.deleteIfExists(p))
 			System.out.println("DELETED: "+p);
-			//LOGGER.fine(() -> "DELETED: "+p);
 	}
 	public long lastModified() {
 		return lastModified;
@@ -114,7 +86,7 @@ public class JsonFile implements Closeable {
 	@Override
 	public String toString() {
 		if(name != null) return name;
-		return name = Main.relativeToSnippedDir(jsonFilePath);
+		return name = App.relativeToSnippedDir(jsonFilePath);
 	}
 
 	public Template add(String id, Template relativeTo) {
@@ -191,43 +163,34 @@ public class JsonFile implements Closeable {
 		StringBuilder sink = null;
 
 		try {
-			buffer = buffer();
 			int len = p.length();
-
-			if(buffer.capacity() < len) {
-				buffer = ByteBuffer.allocate(len);
-				System.out.println("new buffer created of length: "+len);
-			}
-
+			buffer = resource.buffer(len);
 			buffer.position(buffer.capacity() - len);
+			
 			try {
 				indexed_json().read(buffer, p.start);
 			} catch (IOException e1) {
-				throw new RuntimeException(e1);
+				throw new UncheckedIOException(e1);
 			}
 
 			if(buffer.limit() != buffer.capacity())
 				throw new IllegalStateException();
 
 			buffer.position(buffer.capacity() - len);
-
-			if(DECODER == null)
-				DECODER = CHARSET.newDecoder().onMalformedInput(REPORT).onUnmappableCharacter(REPORT);
-			else
-				DECODER.reset();
-
-			charBuffer = charBuffer();
+			
+			CharsetDecoder decoder = resource.decoder();
+			charBuffer = resource.charBuffer();
 
 			while(true) {
-				CoderResult result = DECODER.decode(buffer, charBuffer, true);
+				CoderResult result = decoder.decode(buffer, charBuffer, true);
 
 				if(result.isUnderflow()) {
 					while(true) {
-						result = DECODER.flush(charBuffer);
+						result = decoder.flush(charBuffer);
 						if(result.isUnderflow())
 							break;
 						else if(sink == null) 
-							sink = templateWriter().getBuilder();
+							sink = resource.templateWriter().getBuilder();
 
 						if(sink != null) {
 							charBuffer.flip();
@@ -239,7 +202,7 @@ public class JsonFile implements Closeable {
 				}
 
 				if(sink == null)
-					sink = templateWriter().getBuilder();
+					sink = resource.templateWriter().getBuilder();
 
 				if(sink != null) {
 					charBuffer.flip();
@@ -378,7 +341,7 @@ public class JsonFile implements Closeable {
 				data = data != null ? data : new ArrayList<>();
 
 				//overrided to keep the order of keys;
-				new JSONObject(new JSONTokener(Files.newBufferedReader(jsonFilePath, CHARSET))) {
+				new JSONObject(new JSONTokener(Files.newBufferedReader(jsonFilePath, resource.charset()))) {
 					@Override
 					public JSONObject put(String key, Object value) throws JSONException {
 						super.put(key, value);
@@ -406,7 +369,7 @@ public class JsonFile implements Closeable {
 		}
 
 		try(FileChannel os = FileChannel.open(p, CREATE, TRUNCATE_EXISTING, WRITE)) {
-			StringWriter2 w = templateWriter();
+			StringWriter2 w = resource.templateWriter();
 			Iterator<Template> iter = data.iterator();
 
 			while (iter.hasNext()) {
@@ -428,22 +391,17 @@ public class JsonFile implements Closeable {
 	}
 
 	private void write(CharSequence s, FileChannel os) throws IOException {
-		ByteBuffer buffer = buffer();
-
-		if(ENCODER == null)
-			ENCODER = CHARSET.newEncoder().onMalformedInput(REPORT).onUnmappableCharacter(REPORT);
-		else
-			ENCODER.reset();
-
+		ByteBuffer buffer = resource.buffer(-1);
+		CharsetEncoder encoder = resource.encoder();
 		CharBuffer chars = CharBuffer.wrap(s);
 
 		while(true) {
-			CoderResult c = ENCODER.encode(chars, buffer, true);
+			CoderResult c = encoder.encode(chars, buffer, true);
 			write0(buffer, os);
 
 			if(!chars.hasRemaining()) {
 				while(true) {
-					c = ENCODER.flush(buffer);
+					c = encoder.flush(buffer);
 					write0(buffer, os);
 					if(c.isUnderflow()) break;
 				}
@@ -514,8 +472,8 @@ public class JsonFile implements Closeable {
 	public Throwable error() {
 		return error;
 	}
-	private static final ByteBuffer START = ByteBuffer.wrap("{\n".getBytes(CHARSET));
-	private static final ByteBuffer END = ByteBuffer.wrap("\n}".getBytes(CHARSET));
+	private static final ByteBuffer START = ByteBuffer.wrap("{\n".getBytes(resource.charset()));
+	private static final ByteBuffer END = ByteBuffer.wrap("\n}".getBytes(resource.charset()));
 
 	public void save() throws IOException {
 		if(save_request == 0) {
@@ -583,7 +541,7 @@ public class JsonFile implements Closeable {
 		// LOGGER.fine(() -> String.format("transfered start:%s, count:%s ", st, en - st));
 	}
 	private void writeJson(Template template, FileChannel sink, boolean appendComma) throws IOException {
-		StringWriter2 sw = templateWriter();
+		StringWriter2 sw = resource.templateWriter();
 		template.writeJson(sw);
 		if(appendComma)
 			sw.append(",\n");
@@ -611,6 +569,8 @@ public class JsonFile implements Closeable {
 		} else
 			System.out.println("MODIFIED: \n"+t);
 	}
+	
+	private static final JSONObject  TEMPLATE_JSON = new JSONObject();
 
 	public class Template implements Comparable<Template> {
 		public Position position;
@@ -744,7 +704,7 @@ public class JsonFile implements Closeable {
 		public String toString() {
 			if(jsonString != null) return jsonString;
 
-			StringWriter2 w = templateWriter();
+			StringWriter2 w = resource.templateWriter();
 			w.clear();
 			writeJson(w);
 			jsonString = w.toString();

@@ -1,6 +1,8 @@
 /bin/
 /.gradle/
 /build/
+/snippets/
+/app_data/
 *.class
 
 *.jar

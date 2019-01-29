@@ -9,9 +9,11 @@ mainClassName = 'sam.pkg.Main'
 
 version = '.002'
 ext.appdir = file(/C:\Users\Sameer\Documents\MEGAsync\SimpleUtils\sam\programs\template\app.beta\bin/)
+/*
 run {
   workingDir appdir.parent
 }
+*/
 
 dependencies {
     compile 'org.json:json:20180813'
@@ -19,8 +21,11 @@ dependencies {
 }
 
 task deleteJars {
-  delete fileTree(appdir) {
-    include '*.jar'
+  doLast {
+     file(appdir).listFiles().each({
+       if(it.name.endsWith('.jar'))
+         it.delete();
+     });
   }
 }
 

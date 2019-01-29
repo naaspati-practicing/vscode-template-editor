@@ -193,7 +193,7 @@ public class Editor extends GridPane  {
 	@FXML
 	private void bodyExpandAction(Event event) {
 		Expand e = expand.get();
-		e.init(Main.stage(), bodyTA);
+		e.init(App.stage(), bodyTA);
 	}
 
 

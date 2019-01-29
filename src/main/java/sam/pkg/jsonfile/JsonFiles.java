@@ -17,13 +17,13 @@ import sam.io.serilizers.ObjectReader;
 import sam.io.serilizers.ObjectWriter;
 import sam.logging.MyLoggerFactory;
 import sam.myutils.MyUtilsException;
+import sam.pkg.App;
 import sam.pkg.Main;
 
 public class JsonFiles implements Closeable {
 	private static final Logger LOGGER = MyLoggerFactory.logger(JsonFiles.class);
-	
 	private final List<JsonFile> files;
-	private final Path cache_meta_path = Paths.get("cache_meta.dat");
+	private final Path cache_meta_path = Main.CACHE_DIR.resolve("cache_meta.dat");
 
 	@SuppressWarnings("resource")
 	public JsonFiles() throws IOException {
@@ -50,12 +50,11 @@ public class JsonFiles implements Closeable {
 		}
 
 		Files.createDirectories(Main.CACHE_DIR);
-
 		Files.walk(Main.SNIPPET_DIR)
 		.filter(f -> Files.isRegularFile(f) && f.getFileName().toString().toLowerCase().endsWith(".json"))
 		.forEach(f -> {
 			jsonFiles.computeIfAbsent(f, f2 -> {
-				LOGGER.info(() -> "new Json: "+Main.relativeToSnippedDir(f));
+				LOGGER.info(() -> "new Json: "+App.relativeToSnippedDir(f));
 				return MyUtilsException.noError(() -> new JsonFile(maxId[0]++, f, 0L));	
 			});
 		});
