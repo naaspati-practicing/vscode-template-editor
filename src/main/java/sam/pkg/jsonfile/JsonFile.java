@@ -14,7 +14,6 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.io.Reader;
-import java.io.UncheckedIOException;
 import java.nio.ByteBuffer;
 import java.nio.CharBuffer;
 import java.nio.channels.FileChannel;
@@ -34,23 +33,21 @@ import org.json.JSONObject;
 import org.json.JSONTokener;
 
 import sam.console.ANSI;
-import sam.pkg.App;
-import sam.pkg.Main;
+import sam.myutils.MyUtilsException;
+import sam.nopkg.Junk;
+import sam.pkg.Utils;
 import sam.string.StringWriter2;
 import sam.string.SubSequence;
 
 public class JsonFile implements Closeable {
-	public final Path jsonFilePath;
-	private long lastModified;
-	public final int id;
-	private boolean modified, file_modified;
-	private boolean fileExists;
-	private Throwable error;
-
+	private static final LoadedFile loader = new LoadedFile();
+	
 	private List<Template> data;
-	private List<Template> newData;
+	private boolean modified, file_modified;
+	private Throwable error;
+	private final CacheFile cache;
 
-	private FileChannel _indexed_json;
+	private List<Template> newData;
 
 	public static final String PREFIX = "prefix";
 	public static final String BODY = "body";
@@ -58,35 +55,22 @@ public class JsonFile implements Closeable {
 	private int save_request;
 	private static final Resource resource = Resource.getInstance();
 
-	JsonFile(int id, Path jsonFilePath, long oldLastModified) throws IOException {
-		this.jsonFilePath = jsonFilePath;
-		this.id = id;
+	JsonFile(CacheFile cacheFile) throws IOException {
+		if(Files.notExists(cacheFile.getSourcePath()))
+			throw new IllegalArgumentException("file not found: "+cacheFile.getSourcePath());
+		
+		this.cache = cacheFile;
+		this.file_modified = cacheFile.isSourceModified();
 
-		this.lastModified = oldLastModified;
-		this.fileExists = Files.exists(jsonFilePath);
-		this.file_modified = fileExists && oldLastModified != jsonFilePath.toFile().lastModified();
-
-		if(!fileExists || file_modified) {
-			delete(keysPath());
-			delete(cachePath());
-		}
-
+		if(file_modified) 
+			cacheFile.clear();
 	}
-	public boolean isFileExists() {
-		return fileExists;
-	}
-	private void delete(Path p) throws IOException {
-		if(Files.deleteIfExists(p))
-			System.out.println("DELETED: "+p);
-	}
-	public long lastModified() {
-		return lastModified;
-	}
+	
 	private String name;
 	@Override
 	public String toString() {
 		if(name != null) return name;
-		return name = App.relativeToSnippedDir(jsonFilePath);
+		return name = cache.subpath().toString();
 	}
 
 	public Template add(String id, Template relativeTo) {
@@ -107,9 +91,9 @@ public class JsonFile implements Closeable {
 						Stream.concat(data.stream(), newData.stream());
 		}
 
-		Path p = keysPath();
+		Path p = cache.keysPath();
 
-		if(file_modified || Files.notExists(p)) 
+		if(file_modified || !cache.exists()) 
 			init();
 		else {
 			try(InputStream is = Files.newInputStream(p, READ);
@@ -124,10 +108,7 @@ public class JsonFile implements Closeable {
 
 				for (int i = 0; i < size; i++) {
 					Template t = new Template(dos.readUTF(), dos.readUTF());
-					Position pos = new Position(dos.readLong(), dos.readLong());
-					if(pos.start != -1 && pos.end != -1)
-						t.position = pos;
-
+					t.range = CacheMeta.of(dos.readInt(), dos.readInt());
 					data.add(t);
 				}
 				System.out.println("loaded: "+p);
@@ -144,45 +125,27 @@ public class JsonFile implements Closeable {
 
 		return data == null ? null : data.stream();
 	}
-	private Path keysPath() {
-		return Main.CACHE_DIR.resolve(id+".keys");
-	}
+	
 	public boolean hasError() {
 		return error != null;
 	}
 	private JSONObject getJson(Template template) {
 		init();
 
-		if(template.position == null) 
+		if(template.range == null) 
 			return null;
 
-		Position p = template.position;
-
-		ByteBuffer buffer = null;
 		CharBuffer charBuffer = null;
 		StringBuilder sink = null;
+		
+		ByteBuffer buf = MyUtilsException.noError(() -> loader.read(template.range, cache.cachePath()));
 
 		try {
-			int len = p.length();
-			buffer = resource.buffer(len);
-			buffer.position(buffer.capacity() - len);
-			
-			try {
-				indexed_json().read(buffer, p.start);
-			} catch (IOException e1) {
-				throw new UncheckedIOException(e1);
-			}
-
-			if(buffer.limit() != buffer.capacity())
-				throw new IllegalStateException();
-
-			buffer.position(buffer.capacity() - len);
-			
 			CharsetDecoder decoder = resource.decoder();
 			charBuffer = resource.charBuffer();
 
 			while(true) {
-				CoderResult result = decoder.decode(buffer, charBuffer, true);
+				CoderResult result = decoder.decode(buf, charBuffer, true);
 
 				if(result.isUnderflow()) {
 					while(true) {
@@ -235,21 +198,13 @@ public class JsonFile implements Closeable {
 			}
 			return new JSONObject(new JSONTokener(new TempStringReader(new SubSequence(chars, start, end))));	
 		} finally {
-			if(buffer != null)
-				buffer.clear();
 			if(charBuffer != null)
 				charBuffer.clear();
 			if(sink != null)
 				sink.setLength(0);
 		}
 	}
-
-	private FileChannel indexed_json() throws IOException {
-		if(_indexed_json == null)
-			_indexed_json = FileChannel.open(cachePath(), READ);
-		return _indexed_json;
-	}
-
+	
 	private class TempStringReader extends Reader {
 
 		private CharSequence str;
@@ -329,19 +284,19 @@ public class JsonFile implements Closeable {
 	private void init() {
 		if(_init_loaded) return;
 		_init_loaded = true;
-
-		Path p = cachePath(); 
+		
 		try {
-			if(file_modified || Files.notExists(p)) {
-				Files.deleteIfExists(p);
+			if(file_modified || !cache.exists()) {
+				cache.clear();
 
 				if(isNotEmpty(data))
 					throw new IllegalStateException("data already initiilized");
 
 				data = data != null ? data : new ArrayList<>();
+				Path p = cache.getSourcePath();
 
 				//overrided to keep the order of keys;
-				new JSONObject(new JSONTokener(Files.newBufferedReader(jsonFilePath, resource.charset()))) {
+				new JSONObject(new JSONTokener(Files.newBufferedReader(p, resource.charset()))) {
 					@Override
 					public JSONObject put(String key, Object value) throws JSONException {
 						super.put(key, value);
@@ -364,7 +319,7 @@ public class JsonFile implements Closeable {
 	}
 	private void _saveCache(Path p) throws IOException {
 		if(data.isEmpty()) {
-			Files.deleteIfExists(p);
+			cache.clear();
 			return;
 		}
 
@@ -375,14 +330,14 @@ public class JsonFile implements Closeable {
 			while (iter.hasNext()) {
 				Template t = iter.next();
 
-				long start = os.position();
+				long start = os.range();
 				t.writeJson(w);
 				if(iter.hasNext())
 					w.append(",\n");
 
 				write(w.getBuilder(), os);
 				w.clear();
-				t.position = new Position(start, os.position());
+				t.range = new CacheMeta(start, os.range());
 
 			}
 		}
@@ -417,41 +372,13 @@ public class JsonFile implements Closeable {
 			os.write(buffer);
 		buffer.clear();
 	}
-
-	private Path cachePath() {
-		return Main.CACHE_DIR.resolve(id+".data");
-	}
-	private static class Position {
-		final long start, end;
-
-		public Position(long start, long end) {
-			this.start = start;
-			this.end = end;
-		}
-
-		public int length() {
-			long l = end - start;
-			if(l > Integer.MAX_VALUE)
-				throw new IllegalStateException();
-			return (int) l;
-		}
-
-		@Override
-		public String toString() {
-			return "Position [start=" + start + ", end=" + end + ", length=" + length() + "]";
-		}
-	}
+	
 	@Override
 	public void close() throws IOException {
-		if(_indexed_json != null)
-			_indexed_json.close();
-
 		if(hasError() || data == null) return;
 
-		Position DEFAULT = new Position(-1, -1);
-
 		if(modified) {
-			Path p = keysPath();
+			Path p = cache.keysPath();
 			try(OutputStream is = Files.newOutputStream(p, CREATE,TRUNCATE_EXISTING);
 					DataOutputStream dos = new DataOutputStream(is);
 					) {
@@ -461,95 +388,17 @@ public class JsonFile implements Closeable {
 					dos.writeUTF(t.id);
 					dos.writeUTF(t.prefix);
 
-					Position pos = t.position == null ? DEFAULT : t.position;
-					dos.writeLong(pos.start);
-					dos.writeLong(pos.end);
+					CacheMeta pos = t.range == null ? CacheMeta.DEFAULT : t.range;
+					dos.writeInt(pos.position());
+					dos.writeInt(pos.size());
 				}
+				//FIXME append instead of truncate
 			}
 			System.out.println(ANSI.green("saved: ")+p);
 		}
 	}
 	public Throwable error() {
 		return error;
-	}
-	private static final ByteBuffer START = ByteBuffer.wrap("{\n".getBytes(resource.charset()));
-	private static final ByteBuffer END = ByteBuffer.wrap("\n}".getBytes(resource.charset()));
-
-	public void save() throws IOException {
-		if(save_request == 0) {
-			System.out.println(ANSI.red("nothing to save: ")+jsonFilePath);
-			//LOGGER.warning("nothing to save: "+jsonFilePath);
-			return;
-		}
-
-		save_request = 0;
-
-		try(FileChannel channel = FileChannel.open(jsonFilePath, CREATE, WRITE, TRUNCATE_EXISTING)) {
-			START.clear();
-			channel.write(START);
-
-			if(!data.isEmpty())
-				_save(channel);
-
-			END.clear();
-			channel.write(END);
-		}
-
-		lastModified = jsonFilePath.toFile().lastModified();
-	}
-
-	private void _save(FileChannel sink) throws IOException {
-		if(data.size() > 1) {
-			Template start = null, end = null;
-			for (int i = 0; i < data.size() - 1; i++) {
-				Template t = data.get(i);
-				if(t.position == null) {
-					if(start != null) 
-						write(start, end, sink);
-					writeJson(t, sink, true);
-
-					start = null;
-					end = null;
-				} else {
-					if(start == null) {
-						start = t;
-						end = t;
-					} else {
-						if(end.position.end == t.position.start)
-							end = t;
-						else {
-							write(start, end, sink);
-							start = t;
-							end = t;
-						}
-					}
-				}
-			}
-
-			if(start != null) 
-				write(start, end, sink);
-		}
-		writeJson(data.get(data.size() - 1), sink, false);
-	}
-	private void write(Template start, Template end, FileChannel sink) throws IOException {
-		long st = start.position.start;
-		long en = end.position.end;
-		sink.transferFrom(indexed_json(), st, en - st);
-		
-		System.out.printf("transfered start:%s, count:%s \n", st, en - st);
-
-		// LOGGER.fine(() -> String.format("transfered start:%s, count:%s ", st, en - st));
-	}
-	private void writeJson(Template template, FileChannel sink, boolean appendComma) throws IOException {
-		StringWriter2 sw = resource.templateWriter();
-		template.writeJson(sw);
-		if(appendComma)
-			sw.append(",\n");
-		try {
-			write(sw.getBuilder(), sink);
-		} finally {
-			sw.clear();
-		}
 	}
 	private void remove(Template t) {
 		if(newData == null || !newData.remove(t)) {
@@ -561,19 +410,67 @@ public class JsonFile implements Closeable {
 	private void save(Template t) {
 		save_request++;
 
-		if(t.position != null && newData != null && newData.remove(t)) {
+		if(t.range != null && newData != null && newData.remove(t)) {
 			data.add(t.order, t);
 			modified = true;
-			t.position = null;
+			t.range = null;
 			System.out.println("SET MODIFIED: \n"+t);
 		} else
 			System.out.println("MODIFIED: \n"+t);
 	}
 	
+	private static final byte[] START = "{\n".getBytes(resource.charset());
+	private static final byte[] END = "\n}".getBytes(resource.charset());
+	
+	public void save() throws IOException {
+		if(save_request == 0) {
+			System.out.println(ANSI.red("nothing to save: ")+cache.getSourcePath());
+			return;
+		}
+
+		save_request = 0;
+		ByteBuffer buffer = resource.buffer(-1);
+
+		try(FileChannel channel = FileChannel.open(cache.getSourcePath(), CREATE, WRITE, TRUNCATE_EXISTING)) {
+			buffer.put(START);
+
+			if(!data.isEmpty())
+				_save(channel, buffer);
+
+			if(buffer.remaining() < END.length)
+				Utils.write(buffer, channel);
+			
+			buffer.put(END);
+			Utils.write(buffer, channel);
+		} finally {
+			buffer.clear();
+		}
+		cache.updateLastModified();
+	}
+	
+	private void _save(FileChannel channel, ByteBuffer buffer) {
+		CharsetDecoder decoder = resource.decoder();
+		StringWriter2 writer = resource.templateWriter();
+		
+		if(data.size() > 1) {
+			for (int i = 0; i < data.size() - 1; i++) {
+				Template t = data.get(i);
+				writeJson(t, writer, decoder);
+			}
+		}
+	}
+
+	private void writeJson(Template t, StringWriter2 writer, CharsetDecoder decoder) {
+		if(t.range != null && t.range != CacheMeta.DEFAULT) {
+			//FIXME
+		}
+			
+	}
+
 	private static final JSONObject  TEMPLATE_JSON = new JSONObject();
 
 	public class Template implements Comparable<Template> {
-		public Position position;
+		public CacheMeta range;
 		private String jsonString;
 
 		private transient int order;
@@ -587,7 +484,7 @@ public class JsonFile implements Closeable {
 			this.body = id;
 		}
 		public boolean isModified() {
-			return position == null;
+			return range == null;
 		}
 		// partial load
 		private Template(String id, String prefix) {
@@ -726,5 +623,16 @@ public class JsonFile implements Closeable {
 		public void remove() { 
 			JsonFile.this.remove(this);
 		}
+	}
+
+	public Path getSourcePath() {
+		return cache.getSourcePath();
+	}
+	public CacheFile getCacheFile() {
+		return cache;
+	}
+
+	public boolean isModified() {
+		return modified; //FIXME check if this object was modified during it was open
 	}
 }

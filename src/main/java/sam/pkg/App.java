@@ -1,6 +1,5 @@
 package sam.pkg;
 
-import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -30,8 +29,6 @@ import sam.pkg.jsonfile.JsonFiles;
 // import sam.fx.helpers.FxConstants;
 
 public class App extends Application {
-	public static final int snippet_dir_count = Main.SNIPPET_DIR.getNameCount();;
-	
 	@FXML private SplitPane listSplit;
 	@FXML private ListView2<JsonFile> listJson;
 	@FXML private ListView2<Template> listEntries;
@@ -59,7 +56,7 @@ public class App extends Application {
 		listSplit.setDividerPositions(0.5);
 		editor.init(smTemplates.selectedItemProperty(), saveBtn);
 
-		listJson.setCellFactory(FxCell.listCell(json -> relativeToSnippedDir(json.jsonFilePath, false)));
+		listJson.setCellFactory(FxCell.listCell(JsonFile::toString));
 		listEntries.setCellFactory(FxCell.listCell(Template::id));
 
 		FxPopupShop.setParent(stage);
@@ -89,7 +86,7 @@ public class App extends Application {
 			_temp_list.clear();
 
 			if(n.hasError()) {
-				FxAlert.showErrorDialog(n.jsonFilePath, "failed loading file", n.error());
+				FxAlert.showErrorDialog(n.getSourcePath(), "failed loading file", n.error());
 				smJson.clearSelection();
 				jsonFiles().remove(n);
 				return;
@@ -106,7 +103,7 @@ public class App extends Application {
 	}
 	@FXML
 	private void openAction(Event e) {
-		FileOpenerNE.openFileLocationInExplorer(json().jsonFilePath.toFile());
+		FileOpenerNE.openFileLocationInExplorer(json().getSourcePath().toFile());
 	}
 	@FXML
 	private void removeAction(Event e) {
@@ -132,7 +129,7 @@ public class App extends Application {
 
 		jsonFiles().removeIf(j -> {
 			if(j.hasError()) {
-				FxAlert.showErrorDialog(j.jsonFilePath, "failed loading file", j.error());
+				FxAlert.showErrorDialog(j.getSourcePath(), "failed loading file", j.error());
 				return true;
 			}
 			return false;
@@ -157,15 +154,6 @@ public class App extends Application {
 	}
 	public Template template() {
 		return smTemplates.getSelectedItem();
-	}
-	public static String relativeToSnippedDir(Path path) {
-		return relativeToSnippedDir(path, true);
-	}
-	public static String relativeToSnippedDir(Path path, boolean prefix) {
-		if(prefix)
-			return "%SNIPPET_DIR%\\".concat(path.subpath(snippet_dir_count, path.getNameCount()).toString());
-		else
-			return path.subpath(snippet_dir_count, path.getNameCount()).toString();
 	}
 	public static Window stage() {
 		return stage;

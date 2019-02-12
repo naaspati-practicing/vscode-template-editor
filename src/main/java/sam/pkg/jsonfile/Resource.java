@@ -55,7 +55,7 @@ public class Resource {
 		
 		if(buffer.capacity() < len) {
 			buffer = ByteBuffer.allocate(len+10);
-			System.out.println("new buffer created of length: "+(len+10));
+			System.out.println(getClass().getSimpleName()+": new buffer created of length: "+(len+10));
 		}
 		return buffer;
 	}
