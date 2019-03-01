@@ -1,16 +1,59 @@
 
 
+import static java.nio.file.StandardOpenOption.CREATE;
+import static java.nio.file.StandardOpenOption.WRITE;
+
 import java.io.IOException;
 import java.net.URISyntaxException;
+import java.nio.channels.FileChannel;
+import java.nio.channels.FileLock;
 import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.util.Optional;
 
 import javafx.application.Application;
+import sam.config.LoadConfig;
+import sam.fx.helpers.ErrorApp;
+import sam.myutils.System2;
 import sam.pkg.App;
-import sam.pkg.Utils;
-
 public class Main {
 	public static void main(String[] args) throws URISyntaxException, IOException {
-		Files.createDirectories(Utils.CACHE_DIR);
-		Application.launch(App.class, args);
+		try {
+			LoadConfig.load();
+			Path appdir = Paths.get(Optional.of(System2.lookup("APP_DATA")).orElse("app_data"));
+
+			String sdr = System2.lookup("snippets_dir");
+
+			if(sdr == null) {
+				errorStage("var not set: snippets_dir", null);
+				return;
+			}
+
+			Path snidir = Paths.get(sdr);
+			if(!Files.isDirectory(snidir)) {
+				errorStage("dir not found (snippets_dir)\n"+sdr, null);
+				return;
+			}
+
+			Files.createDirectories(appdir);
+			FileChannel fc = FileChannel.open(appdir.resolve("app_lock"), CREATE, WRITE);
+
+			FileLock lock = fc.tryLock();
+			if(lock == null)
+				errorStage("ONE ONE INSTANCE ALLOWED", null);
+			else {
+				System.getProperties().put("APP_DIR", appdir);
+				System.getProperties().put("SNIPPETS_DIR", snidir);
+				Application.launch(App.class, args);
+			}
+		} catch (Throwable e) {
+			errorStage(null, e);
+		}
+	}
+
+	private static void errorStage(String title, Throwable e) {
+		ErrorApp.set(title, e);
+		Application.launch(ErrorApp.class, new String[0]);
 	}
 }

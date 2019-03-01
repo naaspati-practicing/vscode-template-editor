@@ -3,7 +3,9 @@ package sam.pkg;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.logging.Logger;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import javafx.application.Platform;
 import javafx.beans.InvalidationListener;
@@ -20,12 +22,11 @@ import sam.fx.helpers.FxBindings;
 import sam.fx.helpers.FxCell;
 import sam.fx.helpers.FxFxml;
 import sam.fx.helpers.FxTextSearch;
-import sam.logging.MyLoggerFactory;
 import sam.myutils.Checker;
 import sam.pkg.jsonfile.JsonFile.Template;
 
 public class Adder {
-	private static final Logger LOGGER = MyLoggerFactory.logger(Adder.class);
+	private static final Logger LOGGER = LoggerFactory.getLogger(Adder.class);
 	
 	private Stage stage = new Stage();
 	@FXML private Editor editor;
@@ -36,7 +37,7 @@ public class Adder {
 	
 	public Adder(Window owner) throws IOException {
 		FxFxml.load(this, stage, this);
-		LOGGER.fine(() -> "initialized: "+Adder.class.getName());
+		LOGGER.debug("initialized: {}", getClass());
 		
 		stage.initModality(Modality.APPLICATION_MODAL);
 		stage.initOwner(owner);

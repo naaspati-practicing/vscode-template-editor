@@ -24,11 +24,13 @@ import sam.io.fileutils.FileOpenerNE;
 import sam.myutils.MyUtilsException;
 import sam.pkg.jsonfile.JsonFile;
 import sam.pkg.jsonfile.JsonFile.Template;
-import sam.pkg.jsonfile.JsonFiles;
+import sam.pkg.jsonfile.CacheManager;
 
 // import sam.fx.helpers.FxConstants;
 
 public class App extends Application {
+	
+	
 	@FXML private SplitPane listSplit;
 	@FXML private ListView2<JsonFile> listJson;
 	@FXML private ListView2<Template> listEntries;
@@ -38,7 +40,7 @@ public class App extends Application {
 	@FXML private 	Label metaLabel;
 	@FXML private Editor editor;
 
-	private JsonFiles jsonFiles;
+	private CacheManager jsonFiles;
 
 	MultipleSelectionModel<JsonFile> smJson;
 	MultipleSelectionModel<Template> smTemplates;
@@ -70,7 +72,7 @@ public class App extends Application {
 		stage.setHeight(500);
 		stage.show();
 
-		jsonFiles = new JsonFiles();
+		jsonFiles = new CacheManager();
 		listJson.getItems().setAll(jsonFiles.getFiles());
 	}
 
