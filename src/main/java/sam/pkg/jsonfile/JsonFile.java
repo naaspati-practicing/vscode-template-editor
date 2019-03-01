@@ -42,7 +42,6 @@ public class JsonFile {
 	private Throwable error;
 
 	private long lastModified;
-	private final Path subpath;
 	private final Path source;
 
 	private List<Template> newData;
@@ -52,13 +51,14 @@ public class JsonFile {
 	public static final String DESCRIPTION = "description";
 
 	private int save_request;
+	public final int id;
 
-	JsonFile(CacheManager cmanager, Path jsonSource, long lastModified) throws IOException {
+	JsonFile(int id, Path jsonSource, long lastModified, CacheManager cmanager) throws IOException {
+		this.id = id;
 		this.cmanager = cmanager;
 		Checker.requireNonNull("jsonSource", jsonSource);
 
 		this.source = jsonSource;
-		this.subpath = MyUtilsPath.subpath(jsonSource, SNIPPET_DIR);
 		this.lastModified = lastModified;
 
 		if(Files.notExists(source))
@@ -74,16 +74,21 @@ public class JsonFile {
 	
 	private void updateLastModified() {
 		this.lastModified = source.toFile().lastModified();
+		cmanager.setModified(this);
 	}
 	public long getLastModified() {
 		return lastModified;
+	}
+	private static  final int COUNT = SNIPPET_DIR.getNameCount();
+	public Path subpath() {
+		return source.subpath(COUNT, source.getNameCount());
 	}
 
 	private String name;
 	@Override
 	public String toString() {
 		if(name != null) return name;
-		return name = subpath.toString();
+		return name = subpath().toString();
 	}
 
 	public Template add(String id, Template relativeTo) {

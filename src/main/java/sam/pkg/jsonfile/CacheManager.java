@@ -1,16 +1,17 @@
 package sam.pkg.jsonfile;
 
-import static java.nio.charset.CodingErrorAction.*;
+import static java.nio.charset.CodingErrorAction.REPORT;
+import static java.nio.file.StandardOpenOption.APPEND;
 import static java.nio.file.StandardOpenOption.CREATE;
 import static java.nio.file.StandardOpenOption.TRUNCATE_EXISTING;
-import static sam.pkg.Utils.*;
+import static sam.pkg.Utils.APP_DIR;
 import static sam.pkg.Utils.SNIPPET_DIR;
 
+import java.io.BufferedWriter;
 import java.io.Closeable;
 import java.io.DataOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
-import java.nio.channels.FileChannel;
 import java.nio.channels.WritableByteChannel;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -24,19 +25,12 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.stream.Collectors;
-
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import sam.collection.IndexedMap;
 import sam.console.ANSI;
 import sam.io.IOUtils;
-import sam.io.fileutils.FilesUtilsIO;
 import sam.io.infile.DataMeta2;
 import sam.io.infile.TextInFile;
-import sam.io.serilizers.ObjectReader;
-import sam.io.serilizers.ObjectWriter;
 import sam.myutils.Checker;
 import sam.nopkg.EnsureSingleton;
 import sam.nopkg.Junk;
@@ -44,7 +38,6 @@ import sam.nopkg.StringResources;
 import sam.pkg.jsonfile.JsonFile.Template;
 
 public class CacheManager implements Closeable {
-	private static final Logger LOGGER = LoggerFactory.getLogger(CacheManager.class);
 	private final EnsureSingleton singleton = new EnsureSingleton();
 
 	public static final int KEYS = 0x777;
@@ -53,16 +46,14 @@ public class CacheManager implements Closeable {
 	private final TextInFile jumbofile;
 	private final AtomicInteger ids = new AtomicInteger(0); //FIXME set maxID 
 	private final Path MYDIR = APP_DIR.resolve(CacheManager.class.getName());
-	private final BitSet modified = new BitSet();
+	private final BitSet modifiedJsons = new BitSet();
 
 	@SuppressWarnings({ "rawtypes" })
 	public CacheManager() throws IOException {
 		singleton.init();
 		
-		Path jffile = MYDIR.resolve("jumbofile");
-		
 		Path cfp = cacheFilePath();
-		Map<Path, Long> map;
+		Map<Path, String> map;
 		if(Files.notExists(cfp))
 			map =  Collections.emptyMap();
 		else {
@@ -70,7 +61,9 @@ public class CacheManager implements Closeable {
 			Files.lines(cfp)
 			.forEach(s -> {
 				int n = s.indexOf(' ');
-				map.put(SNIPPET_DIR.resolve(s.substring(n+1)), Long.parseLong(s.substring(0, n)));
+				if(n < 0)
+					return;
+				map.put(SNIPPET_DIR.resolve(s.substring(n+1)), s.substring(0, n));
 			});
 		}
 		
@@ -80,42 +73,68 @@ public class CacheManager implements Closeable {
 		.filter(f -> Files.isRegularFile(f) && f.getFileName().toString().toLowerCase().endsWith(".json"))
 		.iterator();
 		
-		int namecount = SNIPPET_DIR.getNameCount();
-		Long ZERO = Long.valueOf(0);
+		List<Path> newJsons = null;
 		
 		while (itr.hasNext()) {
 			Path f = itr.next();
-			Long c = map.get(f);
+			String c = map.get(f);
 			if(c == null) {
-				c = ZERO;
-				LOGGER.info("new Json: %SNIPPET_DIR%\\", f.subpath(namecount, f.getNameCount()));
+				if(newJsons == null)
+					newJsons = new ArrayList<>();
+				newJsons.add(f);
+			} else {
+				int n = c.indexOf('|');
+				files.add(new JsonFile(Integer.parseInt(c.substring(0, n)), f, Long.parseLong(c.substring(n+1)), this));	
 			}
-			files.add(new JsonFile(this, f, c));
+		}
+		if(Checker.isNotEmpty(newJsons)) {
+			int namecount = SNIPPET_DIR.getNameCount();
+			int ids = files.isEmpty() ? 0 : (files.stream().mapToInt(j -> j.id).max().orElse(0)+1);
+			
+			for (Path p : newJsons) {
+				System.out.println("new Json: %SNIPPET_DIR%\\"+ p.subpath(namecount, p.getNameCount()));
+				
+				JsonFile j = new JsonFile(ids++, p, 0, this);
+				setModified(j);
+				files.add(j);
+			}
 		}
 		
 		this.files = files.toArray(new JsonFile[files.size()]);
 		Arrays.sort(this.files, Comparator.comparingLong(j -> j.getLastModified() < 0 ? Long.MAX_VALUE : j.getLastModified()));
+		
+		Path jffile = MYDIR.resolve("jumbofile");
+		//FIXME delete existing if data cache invalidated
+		this.jumbofile = new TextInFile(jffile, true);
 	}
 
 	private Path cacheFilePath() {
 		return MYDIR.resolve("cacheFilePath");
 	}
+	void setModified(JsonFile f) {
+		modifiedJsons.set(f.id);
+	}
 
 	@Override
 	public void close() throws IOException {
-		for (JsonFile f : files) {
-			try {
-				f.close();
-			} catch (IOException e) {
-				LOGGER.warn("failed to close: {}", f, e);
+		if(!modifiedJsons.isEmpty()) {
+			try(BufferedWriter w = Files.newBufferedWriter(cacheFilePath(), CREATE, APPEND)) {
+				for (JsonFile f : files) {
+					if(modifiedJsons.get(f.id)) {
+						w.append(Integer.toString(f.id)).append('|')
+						.append(Long.toString(f.getLastModified())).append(' ')
+						.append(f.subpath().toString()).append('\n');
+					}
+				}	
 			}
 		}
-		if(Checker.anyMatch(JsonFile::isModified, files))
-			ObjectWriter.writeList(cacheFilePath(), files, (f, dos) -> f.getCacheFile().write(dos));
-	}
-	//JSON file close
-	@Override
-	public void close() throws IOException {
+		
+		//FIXME save modified DateMeta2(s)
+		
+		/**
+		 * JSON file close
+	//TODO @Override
+	public void close2() throws IOException {
 		if(hasError() || data == null) return;
 
 		if(modified) {
@@ -137,6 +156,8 @@ public class CacheManager implements Closeable {
 			}
 			System.out.println(ANSI.green("saved: ")+p);
 		}
+	}
+		 */
 	}
 
 	public List<JsonFile> getFiles() {
@@ -174,7 +195,6 @@ public class CacheManager implements Closeable {
 	}
 
 	public DataMeta2 write(CharSequence sb, StringResources r) {
-		
 		IOUtils.ensureCleared(r.buffer);
 		int id = ids.incrementAndGet();
 		modified.set(id);
@@ -182,7 +202,7 @@ public class CacheManager implements Closeable {
 	}
 
 	@SuppressWarnings({ "unchecked", "rawtypes" })
-	public void transfer(List<DataMeta2> metas, WritableByteChannel channel) {
+	public void transfer(List<DataMeta2> metas, WritableByteChannel channel) throws IOException {
 		jumbofile.transferTo((List)metas, channel);
 	}
 }
