@@ -24,7 +24,7 @@ import sam.io.fileutils.FileOpenerNE;
 import sam.myutils.MyUtilsException;
 import sam.pkg.jsonfile.JsonFile;
 import sam.pkg.jsonfile.JsonFile.Template;
-import sam.pkg.jsonfile.CacheManager;
+import sam.pkg.jsonfile.JsonManager;
 
 // import sam.fx.helpers.FxConstants;
 
@@ -40,7 +40,7 @@ public class App extends Application {
 	@FXML private 	Label metaLabel;
 	@FXML private Editor editor;
 
-	private CacheManager jsonFiles;
+	private JsonManager jsonFiles;
 
 	MultipleSelectionModel<JsonFile> smJson;
 	MultipleSelectionModel<Template> smTemplates;
@@ -72,27 +72,25 @@ public class App extends Application {
 		stage.setHeight(500);
 		stage.show();
 
-		jsonFiles = new CacheManager();
+		jsonFiles = new JsonManager(); //FIXME LOAD ASYNC
 		listJson.getItems().setAll(jsonFiles.getFiles());
 	}
-
-	private final List<Template> _temp_list = new ArrayList<>();
 
 	private void jsonChange(JsonFile n) {
 		smTemplates.clearSelection();
 		if(n == null)
 			listEntries.clear();
 		else {
-			_temp_list.clear();
-			listEntries.setAll(n.getTemplates().collect(Collectors.toCollection(() -> _temp_list)));
-			_temp_list.clear();
-
-			if(n.hasError()) {
-				FxAlert.showErrorDialog(n.getSourcePath(), "failed loading file", n.error());
-				smJson.clearSelection();
-				jsonFiles().remove(n);
-				return;
-			}
+			n.getTemplates((list, error) -> {
+				if(error != null) {
+					FxAlert.showErrorDialog(n.source, "failed loading file", error);
+					smJson.clearSelection();
+					jsonFiles().remove(n);
+					// FIXME replace editor with error TextArea 
+				} else {
+					listEntries.setAll(list);					
+				}
+			});
 		}
 	}
 	@Override
@@ -105,7 +103,7 @@ public class App extends Application {
 	}
 	@FXML
 	private void openAction(Event e) {
-		FileOpenerNE.openFileLocationInExplorer(json().getSourcePath().toFile());
+		FileOpenerNE.openFileLocationInExplorer(json().source.toFile());
 	}
 	@FXML
 	private void removeAction(Event e) {
@@ -124,6 +122,7 @@ public class App extends Application {
 		if(adder == null)
 			adder = MyUtilsException.noError(() -> new Adder(stage));
 
+		
 		keys = keys != null ? keys : jsonFiles().stream().flatMap(f -> f.getTemplates()).collect(Collectors.toList());
 		JsonFile f = json();
 		if(f.hasError()) 
@@ -131,7 +130,7 @@ public class App extends Application {
 
 		jsonFiles().removeIf(j -> {
 			if(j.hasError()) {
-				FxAlert.showErrorDialog(j.getSourcePath(), "failed loading file", j.error());
+				FxAlert.showErrorDialog(j.source, "failed loading file", j.error());
 				return true;
 			}
 			return false;

@@ -17,6 +17,7 @@ import sam.config.LoadConfig;
 import sam.fx.helpers.ErrorApp;
 import sam.myutils.System2;
 import sam.pkg.App;
+
 public class Main {
 	public static void main(String[] args) throws URISyntaxException, IOException {
 		try {
@@ -54,6 +55,6 @@ public class Main {
 
 	private static void errorStage(String title, Throwable e) {
 		ErrorApp.set(title, e);
-		Application.launch(ErrorApp.class, new String[0]);
+		Application.launch(ErrorApp.class, new String[0]);	
 	}
 }
