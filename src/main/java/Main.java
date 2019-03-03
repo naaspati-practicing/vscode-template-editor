@@ -12,8 +12,12 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Optional;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import javafx.application.Application;
 import sam.config.LoadConfig;
+import sam.console.ANSI;
 import sam.fx.helpers.ErrorApp;
 import sam.myutils.System2;
 import sam.pkg.App;
@@ -22,7 +26,7 @@ public class Main {
 	public static void main(String[] args) throws URISyntaxException, IOException {
 		try {
 			LoadConfig.load();
-			Path appdir = Paths.get(Optional.of(System2.lookup("APP_DATA")).orElse("app_data"));
+			Path appdir = Paths.get(Optional.ofNullable(System2.lookup("APP_DATA")).orElse("app_data"));
 
 			String sdr = System2.lookup("snippets_dir");
 
@@ -44,8 +48,13 @@ public class Main {
 			if(lock == null)
 				errorStage("ONE ONE INSTANCE ALLOWED", null);
 			else {
+				Logger LOGGER = logger();
+
 				System.getProperties().put("APP_DIR", appdir);
 				System.getProperties().put("SNIPPETS_DIR", snidir);
+
+				LOGGER.debug(ANSI.yellow("APP_DIR:") +"\""+ appdir.toAbsolutePath()+"\"");
+				LOGGER.info(ANSI.yellow("SNIPPETS_DIR: ")+"\""+ snidir.toAbsolutePath()+"\"");
 				Application.launch(App.class, args);
 			}
 		} catch (Throwable e) {
@@ -54,7 +63,14 @@ public class Main {
 	}
 
 	private static void errorStage(String title, Throwable e) {
+		if(e != null)
+			logger().error("{}", title == null ? "" : title, e);
+
 		ErrorApp.set(title, e);
 		Application.launch(ErrorApp.class, new String[0]);	
+	}
+
+	private static Logger logger() {
+		return LoggerFactory.getLogger(Main.class);
 	}
 }

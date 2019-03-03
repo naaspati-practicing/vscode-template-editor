@@ -1,162 +1,139 @@
 package sam.pkg;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.stream.Collectors;
+import java.util.Objects;
+import java.util.concurrent.CompletableFuture;
+import java.util.function.Consumer;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import javafx.application.Application;
-import javafx.beans.binding.Bindings;
-import javafx.collections.ObservableList;
-import javafx.event.Event;
-import javafx.fxml.FXML;
+import javafx.application.Platform;
+import javafx.beans.property.ReadOnlyObjectProperty;
+import javafx.geometry.Pos;
+import javafx.scene.Node;
+import javafx.scene.Scene;
 import javafx.scene.control.Button;
-import javafx.scene.control.Label;
-import javafx.scene.control.MultipleSelectionModel;
-import javafx.scene.control.SelectionMode;
 import javafx.scene.control.SplitPane;
+import javafx.scene.control.TextArea;
+import javafx.scene.layout.BorderPane;
+import javafx.scene.layout.HBox;
+import javafx.scene.layout.Priority;
+import javafx.scene.text.Text;
 import javafx.stage.Stage;
-import javafx.stage.Window;
 import sam.fx.alert.FxAlert;
-import sam.fx.helpers.FxCell;
-import sam.fx.helpers.FxFxml;
+import sam.fx.helpers.FxButton;
+import sam.fx.helpers.FxConstants;
+import sam.fx.helpers.FxHBox;
 import sam.fx.popup.FxPopupShop;
-import sam.io.fileutils.FileOpenerNE;
 import sam.myutils.MyUtilsException;
 import sam.pkg.jsonfile.JsonFile;
-import sam.pkg.jsonfile.JsonFile.Template;
 import sam.pkg.jsonfile.JsonManager;
+import sam.thread.MyUtilsThread;
 
 // import sam.fx.helpers.FxConstants;
 
-public class App extends Application {
+public class App extends Application implements FullScreen {
 	
+	private final JsonFileList listJson = new JsonFileList();
+	private final ReadOnlyObjectProperty<JsonFile> selectedJson =  listJson.selectedItemProperty();
+	private final TemplateList entries = new TemplateList(selectedJson);
+	private final Editor editor = new Editor(this);
 	
-	@FXML private SplitPane listSplit;
-	@FXML private ListView2<JsonFile> listJson;
-	@FXML private ListView2<Template> listEntries;
-	@FXML private Button saveBtn;
-	@FXML private Button addBtn;
-	@FXML private Button openButton;
-	@FXML private 	Label metaLabel;
-	@FXML private Editor editor;
-
-	private JsonManager jsonFiles;
-
-	MultipleSelectionModel<JsonFile> smJson;
-	MultipleSelectionModel<Template> smTemplates;
-	private static Stage stage;
+	private final HBox root = new HBox(5, new SplitPane(listJson, entries), editor);
+	private final Scene mainScene = new Scene(root);
+	private JsonManager jsons;
 
 	@Override
 	public void start(Stage stage) throws Exception {
-		App.stage = stage;
-		FxFxml.load(this, stage, this);
+		stage.setTitle("VSCode template Editor");
 
-		smJson = listJson.selectionModel();
-		smJson.setSelectionMode(SelectionMode.SINGLE);
-		smTemplates = listEntries.selectionModel();
-		smTemplates.setSelectionMode(SelectionMode.MULTIPLE);
-		listSplit.setDividerPositions(0.5);
-		editor.init(smTemplates.selectedItemProperty(), saveBtn);
-
-		listJson.setCellFactory(FxCell.listCell(JsonFile::toString));
-		listEntries.setCellFactory(FxCell.listCell(Template::id));
+		root.setFillHeight(true);
 
 		FxPopupShop.setParent(stage);
 		FxAlert.setParent(stage);
-
-		addBtn.disableProperty().bind(smJson.selectedItemProperty().isNull());
-		smJson.selectedItemProperty().addListener((p, o, n) -> jsonChange(n));
-		metaLabel.textProperty().bind(Bindings.concat(listEntries.sizeProperty(), " / ", Bindings.size(jsonFiles())));
-
-		stage.setWidth(500);
-		stage.setHeight(500);
+		
+		HBox.setHgrow(editor, Priority.ALWAYS);
+		editor.setMaxWidth(Double.MAX_VALUE);
+		
+		stage.setScene(mainScene);
+		mainScene.getStylesheets().add("styles.css");
 		stage.show();
-
-		jsonFiles = new JsonManager(); //FIXME LOAD ASYNC
-		listJson.getItems().setAll(jsonFiles.getFiles());
+		
+		MyUtilsThread.runOnDeamonThread(() -> {
+			try {
+				JsonManager jsons = new JsonManager(Utils.SNIPPET_DIR);
+				
+				Platform.runLater(() -> {
+					this.jsons = jsons;
+					mainScene.setRoot(root);
+					listJson.setItems(jsons.getFiles());
+					addClosedHandler(stage);
+				});
+			} catch (Throwable e2) {
+				failed(stage, "failed ", e2);
+			}
+		});
+	}
+	
+	private void addClosedHandler(Stage stage) {
+		stage.setOnCloseRequest(ea -> {
+			if(jsons != null) {
+				try {
+					jsons.close();
+				} catch (Throwable e) {
+					failed(stage, "failed to close JsonManager", e);
+					jsons = null;
+					ea.consume();
+				}	
+			}
+		});
 	}
 
-	private void jsonChange(JsonFile n) {
-		smTemplates.clearSelection();
-		if(n == null)
-			listEntries.clear();
-		else {
-			n.getTemplates((list, error) -> {
-				if(error != null) {
-					FxAlert.showErrorDialog(n.source, "failed loading file", error);
-					smJson.clearSelection();
-					jsonFiles().remove(n);
-					// FIXME replace editor with error TextArea 
-				} else {
-					listEntries.setAll(list);					
-				}
-			});
-		}
+	private void failed(Stage stage, String title, Throwable e) {
+		logger().error(title, e);
+		
+		stage.setTitle(title);
+		StringBuilder sb = new StringBuilder();
+		MyUtilsException.append(sb, e, true);
+		mainScene.setRoot(new TextArea(sb.toString()));
+	}
+
+	private Logger logger() {
+		return LoggerFactory.getLogger(App.class);
+	}
+
+	private Button backBtn;
+	private BorderPane fullscreen;
+	private Text fullscreen_title;
+	
+	private Runnable backaction;
+	
+	private void backAction() {
+		mainScene.setRoot(root);
+		fullscreen.setCenter(null);
+		Platform.runLater(backaction);
+		backaction = null;
 	}
 	@Override
-	public void stop() throws Exception {
-		jsonFiles.close();
-		super.stop();
-	}
-	private ObservableList<JsonFile> jsonFiles() {
-		return listJson.getItems();
-	}
-	@FXML
-	private void openAction(Event e) {
-		FileOpenerNE.openFileLocationInExplorer(json().source.toFile());
-	}
-	@FXML
-	private void removeAction(Event e) {
-		ArrayList<Template> keys = new ArrayList<>(smTemplates.getSelectedItems());
-		if(keys.isEmpty()) return;
-		if(this.keys != null)
-			this.keys.removeAll(keys);
-		smTemplates.clearSelection();
-		keys.forEach(Template::remove);
-	}
-	private Adder adder;
-	private List<Template> keys;
-
-	@FXML
-	private void addAction(Event e) {
-		if(adder == null)
-			adder = MyUtilsException.noError(() -> new Adder(stage));
-
-		
-		keys = keys != null ? keys : jsonFiles().stream().flatMap(f -> f.getTemplates()).collect(Collectors.toList());
-		JsonFile f = json();
-		if(f.hasError()) 
-			smJson.clearSelection();
-
-		jsonFiles().removeIf(j -> {
-			if(j.hasError()) {
-				FxAlert.showErrorDialog(j.source, "failed loading file", j.error());
-				return true;
-			}
-			return false;
-		});
-
-		if(f.hasError())
-			return;
-
-		String id = adder.newId(keys);
-		if(id == null) {
-			FxPopupShop.showHidePopup("cancelled", 1500);
-			return;
+	public void fullscreen(Node node, String title, Runnable backaction) {
+		if(fullscreen == null) {
+			backBtn = FxButton.button("BACK", e -> backAction());
+			fullscreen = new BorderPane();
+			fullscreen_title = new Text();
+			
+			fullscreen.setTop(FxHBox.buttonBox(backBtn, FxHBox.maxPane(), fullscreen_title));
+			BorderPane.setMargin(backBtn, FxConstants.INSETS_5);
+			BorderPane.setAlignment(backBtn, Pos.CENTER_LEFT);
 		}
-		Template key = f.add(id, template());
-		keys.add(key);
-		listEntries.getItems().add(key);
-		smTemplates.clearAndSelect(listEntries.getItems().size() - 1);
-	}
-
-	public JsonFile json() {
-		return smJson.getSelectedItem();
-	}
-	public Template template() {
-		return smTemplates.getSelectedItem();
-	}
-	public static Window stage() {
-		return stage;
+		
+		Objects.requireNonNull(node);
+		Objects.requireNonNull(backaction);
+		
+		fullscreen_title.setText(title);
+		this.backaction = backaction;
+		fullscreen.setCenter(node);
+		
+		mainScene.setRoot(fullscreen);
 	}
 }

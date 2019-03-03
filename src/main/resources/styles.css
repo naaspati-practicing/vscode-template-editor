@@ -1,0 +1,11 @@
+.root, .list-view2 {
+	-fx-background-color:white;
+	-fx-font-family:Consolas monospace;
+}
+
+
+.title {
+	-fx-font-size: 1.1em;
+	-fx-border-width:0 0 1 0;
+	-fx-border-color: black;
+}

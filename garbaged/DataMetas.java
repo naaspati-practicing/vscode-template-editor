@@ -11,6 +11,7 @@ import java.nio.channels.FileLock;
 import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Objects;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -24,10 +25,21 @@ class DataMetas {
 	private static final Logger LOGGER = LoggerFactory.getLogger(DataMetas.class);
 	private static final boolean DEBUG_ENABLED = LOGGER.isDebugEnabled();
 
+	public static final int JSON_FILES_PATHS = 0x27;
+	public static final int JSON_FILES_META = 0x29;
+	private static final int MY_META = 0x8282;
+	
+
 	private static final int LONG_B = Long.BYTES;
 	private static final int INT_B = Integer.BYTES;
 
-	private static final long META_RESERVED  = LONG_B * 2;
+	private static final int DATA_META_BYTES =
+			INT_B // id 
+			+ LONG_B // templates-pos
+			+ INT_B; // templates-size
+
+	private static final int RESERVED_IDS = 10;
+	private static final long META_RESERVED  = DATA_META_BYTES * (RESERVED_IDS + 1);
 
 	private final ByteBuffer buffer = ByteBuffer.allocate(JSON_BYTES);
 
@@ -43,11 +55,48 @@ class DataMetas {
 			file.close();
 			throw new IOException("failed to lock: "+path);
 		}
+		DataMeta meta = get_reserved(MY_META);
 
-		if(file.size() != 0 && read(0, INT_B * 2) != -1) {
-			nextId = buffer.getInt();
-			jsonArraySize = buffer.getInt();
+		if(meta != null) {
+			nextId = (int) meta.position;
+			jsonArraySize = meta.size;
 		}
+	}
+	
+	private long pos_reserved(int type) throws IOException {
+		switch (type) {
+			case MY_META: return 0;
+			case JSON_FILES_PATHS: return DATA_META_BYTES;
+			case JSON_FILES_META: return DATA_META_BYTES * 2;
+			default: throw new IOException("unknown type: "+type);
+		}
+	}
+
+	public DataMeta get_reserved(int type) throws IOException {
+		if(read(pos_reserved(type), DATA_META_BYTES) < DATA_META_BYTES)
+			return null;
+		
+		if(buffer.getInt() != type) {
+			LOGGER.error("buffer.getInt({}) != type({})", buffer.getInt(0), type);
+			return null;
+		}
+		
+		return new DataMeta(buffer.getLong(), buffer.getInt());
+	}
+
+	public void write_reserved(int type, DataMeta dm) throws IOException {
+		Objects.requireNonNull(dm);
+		write(type, dm, pos_reserved(type));
+	}
+
+	private void write(int id, DataMeta dm, long pos) throws IOException {
+		buffer.clear();
+		buffer.putInt(id)
+		.putLong(dm.position)
+		.putInt(dm.size)
+		.flip();
+		
+		file.write(buffer, pos);
 	}
 
 	private int read(long position, int limit) throws IOException {
@@ -59,10 +108,7 @@ class DataMetas {
 	}
 
 	public void close(JsonMeta[] metas, ByteBuffer buffer) throws IOException {
-		buffer.clear();
-		buffer
-		.putInt(nextId)
-		.putInt(metas == null ? 0 : metas.length);
+		write_reserved(MY_META, new DataMeta(nextId, metas == null ? 0 : metas.length));
 
 		boolean written = false;
 		if(Checker.isNotEmpty(metas)) {
@@ -93,7 +139,7 @@ class DataMetas {
 		lock.release();
 	}
 
-	private static final int JSON_BYTES = 
+	public static final int JSON_BYTES = 
 			INT_B // json_id 
 			+ LONG_B // lastModified
 			+ LONG_B // templates-pos
@@ -135,17 +181,12 @@ class DataMetas {
 			else if(id != -1)
 				LOGGER.warn("id({}) != {}", id, i);
 		}
-		
+
 		if(DEBUG_ENABLED)
 			LOGGER.debug(Arrays.toString(array));
 
 		return array;
 	}
-
-	private static final int DATA_META_BYTES =
-			INT_B // id 
-			+ LONG_B // templates-pos
-			+ INT_B; // templates-size
 
 	private static final int MAX_ID = 5000;
 	private static final long ID_MIN_POS = JSON_MAX_POS + JSON_BYTES * 2;
@@ -170,10 +211,10 @@ class DataMetas {
 			return null;
 
 		DataMeta d = new DataMeta(buffer.getLong(), buffer.getInt());
-		
+
 		if(DEBUG_ENABLED)
 			LOGGER.debug("READ: id: {}, dataMeta: {}, pos: {}", id, d, pos);
-		
+
 		return d;
 	}
 
@@ -183,7 +224,7 @@ class DataMetas {
 
 		long pos = pos(id);
 		file.write(buffer, pos);
-		
+
 		if(DEBUG_ENABLED)
 			LOGGER.debug("written: id: {}, dataMeta: {}, pos: {}", id, d, pos);
 	}
@@ -210,7 +251,7 @@ class DataMetas {
 			if(buffer.remaining() < DATA_META_BYTES || t.id != t1.id + 1) {
 				if(DEBUG_ENABLED)
 					LOGGER.debug("write: {} -> {}", t1.id, t.id);
-				
+
 				buffer.flip();
 				file.write(buffer, pos(t1.id));
 			}
@@ -225,5 +266,7 @@ class DataMetas {
 		if(DEBUG_ENABLED)
 			LOGGER.debug("write: {} -> {}", t1.id, templates.get(templates.size() - 1).id);
 	}
+
+
 }
 

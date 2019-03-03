@@ -46,7 +46,7 @@ public class Adder {
 		ok.setOnAction(this::okAction);
 		
 		similar.setCellFactory(FxCell.listCell(k -> k.key));
-		editor.init(FxBindings.<TemplateWrap, Template>map(similar.getSelectionModel().selectedItemProperty(), t -> t.template), null);
+		//FIXME editor.init(FxBindings.<TemplateWrap, Template>map(similar.getSelectionModel().selectedItemProperty(), t -> t.template), null);
 		editor.setDisable(true);
 	}
 	

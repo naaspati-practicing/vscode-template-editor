@@ -1,25 +1,55 @@
-apply plugin: 'java'
-apply plugin: 'application'
+plugins {
+    id 'java'
+    id 'application'
+    id 'jacoco'
+}
 
 repositories {
     jcenter()
 }
 
-mainClassName = 'sam.pkg.Main'
+mainClassName = 'Main'
 
 version = '.002'
 ext.appdir = file(/C:\Users\Sameer\Documents\MEGAsync\SimpleUtils\sam\programs\template\app.beta\bin/)
-/*
+
 run {
   workingDir appdir.parent
 }
-*/
+
+ext.JUNIT_VERSION = '5.3.2'
+ext.TRUTH_VERSION = '0.42'
 
 dependencies {
     compile 'org.json:json:20180813'
     compile files('myutils.jar')
-    compile 'org.slf4j:slf4j-jdk14:1.8.0-beta1'
+    compile 'org.slf4j:slf4j-simple:1.8.0-beta4'
+
+
+// testImplementation 'com.google.truth:truth:'+TRUTH_VERSION
+// testImplementation 'com.google.truth.extensions:truth-java8-extension:'+TRUTH_VERSION
+  testImplementation 'org.junit.jupiter:junit-jupiter-api:'+JUNIT_VERSION
+  // testImplementation 'org.junit.jupiter:junit-jupiter-params:'+JUNIT_VERSION
+  testImplementation 'org.junit.jupiter:junit-jupiter-engine:'+JUNIT_VERSION        
 }
+
+jacocoTestReport {
+    reports {
+        xml.enabled false
+        csv.enabled false
+        html.destination file("${buildDir}/jacoco.html")
+    }
+}
+
+test {
+  useJUnitPlatform()
+  systemProperty 'java.util.logging.config.file','test-logging.properties'
+  systemProperty 'org.slf4j.simpleLogger.defaultLogLevel','debug'
+  systemProperty 'org.slf4j.simpleLogger.showThreadName','false'
+  systemProperty 'org.slf4j.simpleLogger.showShortLogName','true'
+  systemProperty 'org.slf4j.simpleLogger.levelInBrackets','true'
+}
+
 
 task deleteJars {
   doLast {

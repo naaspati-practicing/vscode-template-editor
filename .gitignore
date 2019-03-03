@@ -3,6 +3,7 @@
 /build/
 /snippets/
 /app_data/
+/java_temp/
 *.class
 
 *.jar

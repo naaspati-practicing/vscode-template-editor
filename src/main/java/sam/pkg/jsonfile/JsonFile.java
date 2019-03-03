@@ -43,29 +43,23 @@ public class JsonFile {
 	public static final String PREFIX = "prefix";
 	public static final String BODY = "body";
 	public static final String DESCRIPTION = "description";
-	private int json_mod, template_mode;
+	private int json_mod;
+	private int template_mode;
 	
-	private long lastModified;
 	public final Path source;
 	public final int id;
 	private boolean saved;
-	final DataMeta templateMeta;
 	
 	private final JsonManager manager;
 
-	JsonFile(int id, long lastModified, DataMeta templateMeta, Path source, JsonManager meta) {
-		this.manager = meta;
-		this.lastModified = lastModified;
+	JsonFile(int id, Path source, JsonManager manager) {
+		this.manager = manager;
 		this.id = id;
 		this.source = source;
-		this.templateMeta = templateMeta;
 	}
 	
 	public boolean isSaved() {
 		return saved;
-	}
-	public long lastModified() {
-		return lastModified;
 	}
 
 	private String name;
@@ -301,7 +295,7 @@ public class JsonFile {
 
 	public class Template implements Comparable<Template> {
 		DataMeta dataMeta;
-		final int id;
+		public final int id;
 		private int order;
 		private final String json_id;
 		private String prefix, body, description;
@@ -315,9 +309,10 @@ public class JsonFile {
 		}
 
 		// partial load
-		private Template(int id, String json_id, String prefix) {
+		private Template(int id, String json_id, String prefix, DataMeta dm) {
 			checkEmpty(json_id, "id");
 
+			this.dataMeta = dm;
 			this.id = id;
 			this.json_id = json_id;
 			this.prefix = prefix;
@@ -338,6 +333,7 @@ public class JsonFile {
 		}
 
 		private boolean loaded;
+		
 		private void load() {
 			if(loaded) return;
 			loaded = true;
@@ -455,10 +451,11 @@ public class JsonFile {
 		public void save() {
 			// TODO Auto-generated method stub
 		}
+		
 	}
 
-	Template template(int id, String json_id, String prefix) {
-		return new Template(id, json_id, prefix);
+	Template template(int id, String json_id, String prefix, DataMeta dm) {
+		return new Template(id, json_id, prefix, dm);
 	}
 
 	public Template template(int dmid, String key, JSONObject value) {
