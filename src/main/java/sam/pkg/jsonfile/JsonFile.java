@@ -95,7 +95,7 @@ public class JsonFile {
 
 	private JSONObject getJson(Template template) throws IOException {
 		try(StringResources r = StringResources.get()) {
-			StringBuilder sb = manager.loadText(template.dataMeta, r);
+			StringBuilder sb = manager.loadText(template, r);
 
 			int start = 0;
 			while(true) {
@@ -248,12 +248,12 @@ public class JsonFile {
 			if(!templates.isEmpty()) {
 				if(templates.size() > 1) {
 					List<DataMeta> metas = new ArrayList<>();
-					for (int i = 0; i < templates.size() - 1; i++){
+					for (int i = 0; i < templates.size() - 1; i++) {
 						Template t = templates.get(i); 
-						if(t.dataMeta == null) 
+						if(manager.meta(t) == null) 
 							writeCache(t, null, r);
 
-						metas.add(t.dataMeta);
+						metas.add(manager.meta(t));
 					} 
 					manager.transfer(metas, channel);	
 				}
@@ -294,7 +294,6 @@ public class JsonFile {
 	private static final StringWriter2 templatesw = new StringWriter2();
 
 	public class Template implements Comparable<Template> {
-		DataMeta dataMeta;
 		public final int id;
 		private int order;
 		private final String json_id;
@@ -309,10 +308,9 @@ public class JsonFile {
 		}
 
 		// partial load
-		private Template(int id, String json_id, String prefix, DataMeta dm) {
+		private Template(int id, String json_id, String prefix) {
 			checkEmpty(json_id, "id");
 
-			this.dataMeta = dm;
 			this.id = id;
 			this.json_id = json_id;
 			this.prefix = prefix;
@@ -454,8 +452,8 @@ public class JsonFile {
 		
 	}
 
-	Template template(int id, String json_id, String prefix, DataMeta dm) {
-		return new Template(id, json_id, prefix, dm);
+	Template template(int id, String json_id, String prefix) {
+		return new Template(id, json_id, prefix);
 	}
 
 	public Template template(int dmid, String key, JSONObject value) {

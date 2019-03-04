@@ -14,18 +14,20 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
+import java.util.Objects;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import sam.io.IOUtils;
 import sam.io.infile.DataMeta;
 import sam.io.infile.TextInFile;
 import sam.myutils.Checker;
 import sam.nopkg.StringResources;
 import sam.string.StringSplitIterator;
 
-class Utils {
-	private static final Logger logger = LoggerFactory.getLogger(Utils.class);
+interface Utils {
+	static final Logger logger = LoggerFactory.getLogger(Utils.class);
 
 	public static Iterator<String> readArray(DataMeta d, TextInFile file, StringResources r, char delimeter) throws IOException {
 		if(d == null || d.size == 0)
@@ -83,7 +85,7 @@ class Utils {
 		return file;
 	}
 
-	interface Consumer {
+	static interface Consumer {
 		void consume(int id, DataMeta meta) throws IOException;
 	}
 
@@ -93,7 +95,8 @@ class Utils {
 	}
 
 	public static void readDataMetasBySize(FileChannel file, long pos, int size, ByteBuffer buf, Consumer consumer) throws IOException {
-		buf.clear();
+		IOUtils.ensureCleared(buf);
+		
 		int count = size/DATA_BYTES;
 		
 		if(count == 0)
@@ -122,5 +125,46 @@ class Utils {
 		buf.putInt(id)
 		.putLong(d.position)
 		.putInt(d.size);
+	}
+	
+	static interface Provider {
+		boolean next() throws IOException;
+		int id();
+		DataMeta dataMeta();
+	}
+	
+	static class WriteMeta {
+		final long init_pos;
+		long pos;
+		int size;
+		
+		public WriteMeta(long pos) {
+			this.init_pos = pos;
+			this.pos = pos;
+		}
+
+		private void add(int n) {
+			pos  += n;
+			size += n;
+		}
+
+		public void write(ByteBuffer buf, FileChannel fc, boolean flip) throws IOException {
+			add(IOUtils.write(buf, pos, fc, flip));
+		}
+	}
+
+	public static WriteMeta writeDataMetas(long pos, FileChannel fc,  ByteBuffer buffer, Provider provider) throws IOException {
+		WriteMeta w = new WriteMeta(pos);
+		buffer.clear();
+		
+		while(provider.next()) {
+			if(buffer.remaining() < DATA_BYTES)
+				w.write(buffer, fc, true);
+			
+			put(buffer, provider.id(), Objects.requireNonNull(provider.dataMeta()));
+		}
+		
+		w.write(buffer, fc, true);
+		return w;
 	}
 }
