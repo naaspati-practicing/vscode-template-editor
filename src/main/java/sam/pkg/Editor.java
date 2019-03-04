@@ -1,5 +1,5 @@
 package sam.pkg;
-import java.util.HashMap;
+import java.util.IdentityHashMap;
 import java.util.Map;
 import java.util.Objects;
 import java.util.function.Function;
@@ -8,12 +8,16 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import javafx.beans.InvalidationListener;
+import javafx.beans.property.ReadOnlyObjectProperty;
 import javafx.event.ActionEvent;
 import javafx.fxml.FXML;
 import javafx.geometry.HPos;
 import javafx.geometry.Pos;
 import javafx.scene.Node;
 import javafx.scene.control.Button;
+import javafx.scene.control.CheckMenuItem;
+import javafx.scene.control.Separator;
+import javafx.scene.control.SeparatorMenuItem;
 import javafx.scene.control.TextArea;
 import javafx.scene.control.TextField;
 import javafx.scene.control.TextInputControl;
@@ -27,9 +31,10 @@ import sam.fx.helpers.FxButton;
 import sam.fx.helpers.FxConstants;
 import sam.fx.helpers.FxGridPane;
 import sam.fx.helpers.FxHBox;
+import sam.fx.helpers.FxMenu;
 import sam.fx.helpers.FxText;
 import sam.fx.helpers.IconButton;
-import sam.pkg.jsonfile.JsonFile.Template;
+import sam.pkg.jsonfile.api.Template;
 
 public class Editor extends BorderPane  {
 	private static final Logger LOGGER = LoggerFactory.getLogger(Editor.class);
@@ -49,14 +54,13 @@ public class Editor extends BorderPane  {
 	private InvalidationListener modListener = i -> mod(1);
 	private final FullScreen fullScreen;
 
-	public Editor(FullScreen fullScreen) {
+	public Editor(ReadOnlyObjectProperty<Template> currentItem, FullScreen fullScreen) {
 		this.fullScreen = fullScreen;
 		setId("editor");
 		
 		IconButton expandMore = new IconButton();
-		IconButton b = new IconButton();
-		b.setIcon("full-size.png");
-		b.setFitHeight(15);
+		expandMore.setIcon("full-size.png");
+		expandMore.setFitHeight(15);
 		expandMore.setOnAction(e -> expandMore());
 		
 		setTop(FxHBox.buttonBox(backBtn, expandMore, FxHBox.maxPane(), title("Editor")));
@@ -87,7 +91,9 @@ public class Editor extends BorderPane  {
 
 		setCenter(center);
 		setBottom(bottom);
-		//TODO  setDisable(true);
+		setDisable(true);
+		
+		currentItem.addListener((p, o, n) -> setItem(n));
 	}
 	
 	private void expandMore() {
@@ -233,11 +239,11 @@ public class Editor extends BorderPane  {
 		mod(0);
 	}
 
-	private static final Map<Integer, History> CACHE = new HashMap<>();
+	private static final Map<Template, History> CACHE = new IdentityHashMap<>();
 	private Template current;
-	private Function<Integer, History> computer = i -> new History();
+	private Function<Template, History> computer = i -> new History();
 
-	public void setItem(Template n) {
+	private void setItem(Template n) {
 		if(current != null) 
 			history.update();
 
@@ -253,7 +259,7 @@ public class Editor extends BorderPane  {
 			this.setDisable(true);
 		} else {
 			this.setDisable(false);
-			history = CACHE.computeIfAbsent(n.id, computer);
+			history = CACHE.computeIfAbsent(n, computer);
 
 			if(history.mod != 0)
 				history.restore();

@@ -8,19 +8,18 @@ import javafx.scene.Node;
 import javafx.scene.control.Button;
 import sam.fx.helpers.FxButton;
 import sam.fx.helpers.FxCell;
-import sam.pkg.jsonfile.JsonFile;
-import sam.pkg.jsonfile.JsonFile.Template;
+import sam.pkg.jsonfile.api.JsonFile;
+import sam.pkg.jsonfile.api.Template;
 
 public class TemplateList extends ListView2<Template> {
 	private final Button addBtn = FxButton.button("ADD", this::addAction);
 	private final Button removeBtn = FxButton.button("REMOVE", this::removeAction);
 
-	public TemplateList(ObservableObjectValue<JsonFile> current) {
+	public TemplateList() {
 		super("entries");
 		
 		removeBtn.disableProperty().bind(list.getSelectionModel().selectedItemProperty().isNull());
-		addBtn.disableProperty().bind(Bindings.isNull(current));
-		list.setCellFactory(FxCell.listCell(Template::id));
+		list.setCellFactory(FxCell.listCell(t -> t.id()));
 	}
 	
 	@Override

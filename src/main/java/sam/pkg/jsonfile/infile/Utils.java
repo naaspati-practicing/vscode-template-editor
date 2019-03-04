@@ -1,5 +1,4 @@
-package sam.pkg.jsonfile;
-
+package sam.pkg.jsonfile.infile;
 import static java.nio.file.StandardOpenOption.CREATE_NEW;
 import static java.nio.file.StandardOpenOption.READ;
 import static java.nio.file.StandardOpenOption.WRITE;
@@ -10,10 +9,7 @@ import java.nio.channels.FileChannel;
 import java.nio.channels.FileLock;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.Collections;
-import java.util.HashMap;
 import java.util.Iterator;
-import java.util.Map;
 import java.util.Objects;
 
 import org.slf4j.Logger;
@@ -22,7 +18,6 @@ import org.slf4j.LoggerFactory;
 import sam.io.IOUtils;
 import sam.io.infile.DataMeta;
 import sam.io.infile.TextInFile;
-import sam.myutils.Checker;
 import sam.nopkg.StringResources;
 import sam.string.StringSplitIterator;
 
@@ -42,23 +37,6 @@ interface Utils {
 		return new StringSplitIterator(sb, delimeter);
 	}
 
-	public static Map<Integer, Path> jsonPathIdMap(Path snippetDir, TextInFile file, DataMeta meta, StringResources r) throws IOException {
-		Iterator<String> array = readArray(meta, file, r, '\t');
-
-		if(array == null)
-			return Collections.emptyMap();
-		else {
-			int n = 0;
-			Map<Integer, Path>  map = new HashMap<>();
-
-			while (array.hasNext()) {
-				String s = array.next();
-				map.put(n++, Checker.isEmptyTrimmed(s) ? null : snippetDir.resolve(s));
-			}
-			return map;
-		}
-	}
-
 	static final int IB = Integer.BYTES;
 	static final int LB = Long.BYTES;
 
@@ -67,12 +45,6 @@ interface Utils {
 			LB + // pos
 			IB  //size
 			;
-
-	public static Iterator<Path> jsonFiles(Path snippetDir) throws IOException {
-		return Files.walk(snippetDir)
-				.filter(f -> Files.isRegularFile(f) && f.getFileName().toString().toLowerCase().endsWith(".json"))
-				.iterator();
-	}
 
 	static FileChannel filechannel(Path path, boolean create) throws IOException {
 		FileChannel file = create ? FileChannel.open(path, READ, WRITE, CREATE_NEW) : FileChannel.open(path, READ, WRITE);

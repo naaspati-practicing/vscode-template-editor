@@ -1,8 +1,10 @@
 package sam.pkg;
 
 import static sam.fx.helpers.FxClassHelper.addClass;
+import static sam.myutils.Checker.isEmpty;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 import org.slf4j.Logger;
@@ -23,7 +25,6 @@ import sam.fx.helpers.FxConstants;
 import sam.fx.helpers.FxHBox;
 import sam.fx.helpers.FxText;
 import sam.fx.helpers.FxUtils;
-import sam.myutils.Checker;
 
 public abstract class ListView2<T> extends BorderPane {
 	private final Logger LOGGER = LoggerFactory.getLogger(getClass());
@@ -48,7 +49,7 @@ public abstract class ListView2<T> extends BorderPane {
 		Node ret;
 
 		Node[] btns = buttons();
-		if(Checker.isEmpty(btns)) 
+		if(isEmpty(btns)) 
 			ret = search;
 		 else 
 			ret = new VBox(2, FxHBox.buttonBox(btns), search);
@@ -110,7 +111,7 @@ public abstract class ListView2<T> extends BorderPane {
 		list.getSelectionModel().clearSelection();
 		String s = search.getText() == null ? null : search.getText().toLowerCase();
 		
-		if(Checker.isEmpty(s)) {
+		if(isEmpty(s)) {
 			items.setAll(all);
 			LOGGER.debug("Search: items.setAll({}): \"{}\"", all.size(), s);
 		} else if(oldSearch != null && s.contains(oldSearch)) {
@@ -138,11 +139,13 @@ public abstract class ListView2<T> extends BorderPane {
 
 	public void setItems(List<T> data) {
 		selfChange = true;
+		
+		data = data == null ? Collections.emptyList() : data;
 
 		list.getSelectionModel().clearSelection();
 		items.setAll(data);
 		all = data;
-		search.setDisable(Checker.isEmpty(all));
+		search.setDisable(isEmpty(all));
 		search.clear();
 		
 		selfChange = false;

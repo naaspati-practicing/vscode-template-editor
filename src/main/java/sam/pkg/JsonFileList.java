@@ -1,6 +1,8 @@
 package sam.pkg;
 
+import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.Map;
 
 import javafx.event.Event;
 import javafx.scene.Node;
@@ -8,15 +10,31 @@ import javafx.scene.control.Button;
 import sam.fx.helpers.FxButton;
 import sam.fx.helpers.FxCell;
 import sam.io.fileutils.FileOpenerNE;
-import sam.pkg.jsonfile.JsonFile;
+import sam.pkg.jsonfile.api.JsonFile;
 
 public class JsonFileList extends ListView2<JsonFile> {
 	private final Button openButton = FxButton.button("Open", this::openAction);
-	private String[] names;
+	private final TemplateList templateList;
 
-	public JsonFileList() {
+	public JsonFileList(TemplateList templateList) {
 		super("Json Files");
-		
+		this.templateList = templateList;
+
+		selectedItemProperty().addListener((p, o, n) -> {
+			if(n == null)
+				templateList.setDisable(true);
+			else  {
+				
+				n.getTemplates((list,  error) -> {
+					if(error != null) {
+						templateList.setItems(null);
+						//TODO
+					} else 
+						templateList.setItems(list);
+				});
+			}
+				
+		});
 		list.setCellFactory(FxCell.listCell(JsonFile::toString));
 		openButton.disableProperty().bind(selectedItemProperty().isNull());
 	}
@@ -25,7 +43,7 @@ public class JsonFileList extends ListView2<JsonFile> {
 		return new Node[]{openButton};
 	}
 	private void openAction(Event e) {
-		FileOpenerNE.openFileLocationInExplorer(selected().source.toFile());
+		FileOpenerNE.openFileLocationInExplorer(selected().source().toFile());
 	}
 	/*
 	 * private void jsonChange(JsonFile n) {
@@ -47,21 +65,17 @@ public class JsonFileList extends ListView2<JsonFile> {
 	}
 	 */
 	
+	private static final Map<JsonFile, String> names = new IdentityHashMap<>();
 	
 	@Override
 	protected String searchValue(JsonFile t) {
-		return names[t.id];
+		return names.get(t);
 	}
 	
 	@Override
 	public void setItems(List<JsonFile> data) {
 		super.setItems(data);
-		int size = data.isEmpty() ? 0 : data.stream().mapToInt(d -> d.id).max().orElse(0) + 1;
-		if(size >  200)
-			throw new RuntimeException();
-		
-		names = new String[size];
-		data.forEach(d -> names[d.id] = d.source.getFileName().toString().toLowerCase());
+		data.forEach(d -> names.put(d, d.source().getFileName().toString().toLowerCase()));
 	}
 	
 }

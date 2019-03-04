@@ -24,7 +24,7 @@ dependencies {
     compile 'org.json:json:20180813'
     compile files('myutils.jar')
     compile 'org.slf4j:slf4j-simple:1.8.0-beta4'
-
+    compile 'name.didier.david:ndd-check4j:0.6.1'
 
 // testImplementation 'com.google.truth:truth:'+TRUTH_VERSION
 // testImplementation 'com.google.truth.extensions:truth-java8-extension:'+TRUTH_VERSION
