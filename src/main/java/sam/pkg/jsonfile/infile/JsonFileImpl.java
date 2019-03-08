@@ -32,6 +32,7 @@ import sam.io.serilizers.StringIOUtils;
 import sam.nopkg.StringResources;
 import sam.pkg.jsonfile.api.JsonFile;
 import sam.pkg.jsonfile.api.Template;
+import sam.pkg.jsonfile.infile.JsonManagerImpl.JsonMeta;
 import sam.string.StringWriter2;
 import sam.string.SubSequence;
 class JsonFileImpl implements JsonFile {

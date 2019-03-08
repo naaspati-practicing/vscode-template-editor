@@ -9,7 +9,7 @@ import java.util.stream.Stream;
 public interface JsonManager extends AutoCloseable {
 	List<JsonFile> getFiles();
 	
-	default Stream<Path> walk(Path snippetDir) throws IOException {
+	static Stream<Path> walk(Path snippetDir) throws IOException {
 		return Files.walk(snippetDir)
 				.filter(f -> Files.isRegularFile(f) && f.getFileName().toString().toLowerCase().endsWith(".json"));
 	}

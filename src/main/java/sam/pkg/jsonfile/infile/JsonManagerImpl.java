@@ -1,9 +1,7 @@
 package sam.pkg.jsonfile.infile;
 
 import static java.nio.charset.CodingErrorAction.REPORT;
-import static java.nio.file.StandardOpenOption.CREATE;
-import static java.nio.file.StandardOpenOption.READ;
-import static java.nio.file.StandardOpenOption.WRITE;
+import static java.nio.file.StandardOpenOption.*;
 import static java.util.Arrays.asList;
 import static java.util.Arrays.sort;
 import static java.util.Arrays.stream;
@@ -18,7 +16,7 @@ import static sam.myutils.Checker.isEmpty;
 import static sam.myutils.Checker.isEmptyTrimmed;
 import static sam.myutils.Checker.isNotEmpty;
 import static sam.myutils.Checker.isNotEmptyTrimmed;
-import static sam.pkg.jsonfile.infile.Utils.DATA_BYTES;
+import static sam.pkg.jsonfile.infile.Utils.*;
 import static sam.pkg.jsonfile.infile.Utils.IB;
 import static sam.pkg.jsonfile.infile.Utils.LB;
 import static sam.pkg.jsonfile.infile.Utils.readArray;
@@ -33,10 +31,14 @@ import java.nio.channels.FileChannel;
 import java.nio.channels.WritableByteChannel;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.security.AccessController;
 import java.security.PrivilegedExceptionAction;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.BitSet;
+import java.util.Collections;
+import java.util.Comparator;
 import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.Iterator;
@@ -70,14 +72,31 @@ import sam.string.StringWriter2;
 public class JsonManagerImpl implements Closeable, JsonManager, JsonLoader {
 	private final Logger logger = LoggerFactory.getLogger(getClass());
 
-	private class JsonMeta {
-		final JsonFileImpl jsonfile;
-		long lastmodified;
-		DataMeta meta; // location of templates string, in smallfile
-		boolean templatesLoaded, modified;
+	public class JsonMeta {
+		public static final int BYTES = IB + // id
+				LB + // last-modified
+				(LB + IB) * 2 // two DataMetas
+				;
+		
+		public final JsonFileImpl jsonfile;
+		private long lastmodified;
+		private DataMeta names_meta, data_meta; // location of templates string, in smallfile
+		private boolean templatesLoaded, modified;
 
-		public JsonMeta(JsonFileImpl json) {
+		private JsonMeta(JsonFileImpl json) {
 			this.jsonfile = json;
+		}
+
+		public long lastmodified() {
+			return lastmodified;
+		}
+
+		public void put(ByteBuffer buf) {
+			buf.putInt(jsonfile.id)
+			.putLong(lastmodified);
+
+			putMeta(names_meta, buf);
+			putMeta(data_meta, buf);
 		}
 	}
 
@@ -94,9 +113,7 @@ public class JsonManagerImpl implements Closeable, JsonManager, JsonLoader {
 	private final List<JsonFile> files;
 	private final Path snippetDir;
 	private final int SNIPPET_DIR_COUNT;
-	private final MetasManager metasManager;
 	private final JsonMetaManager jsonMetaManager;
-	private final JsonMeta[] jsonMetas;
 	private final Map<MetaType, DataMeta> metaTypes = new EnumMap<>(MetaType.class);
 
 	public JsonManagerImpl(Path snippetDir) throws Exception {
@@ -113,398 +130,81 @@ public class JsonManagerImpl implements Closeable, JsonManager, JsonLoader {
 
 		Path jumbofile_path = resolve("jumbofile");
 		Path smallfile_path = resolve("smallfile");
-		Path metas_path = metasPath();
+		Path metatype_path = resolve(MetaType.class.getSimpleName());
 
-		if(anyMatch(Files::notExists, jumbofile_path, smallfile_path, metas_path)) {
-			FilesUtilsIO.deleteDir(MYDIR);
-			Files.createDirectories(MYDIR);
-		}
+		boolean fresh = false;
 
-		final boolean createIfNotExist = Files.notExists(smallfile_path);
-		this.smallfile = new TextInFile(smallfile_path, createIfNotExist);
-		boolean success = false;
+		if(Files.isDirectory(MYDIR)) {
+			Path[] array = {jumbofile_path, smallfile_path, metatype_path};
+			if(anyMatch(Files::notExists, array)) {
+				for (Path p : array) 
+					Files.deleteIfExists(p);
 
-		try(StringResources r = StringResources.get();
-				FileChannel metas = FileChannel.open(metas_path, CREATE, READ, WRITE)) {
-
-			if(metas.size() != 0) {
-				MetaType[] mtypes = MetaType.values();
-				readDataMetasByCount(metas, 0, mtypes.length, r.buffer, (id, dm) -> metaTypes.put(mtypes[id], dm));
+				fresh = true;
 			}
-
-			this.metasManager = new MetasManager(metas, r.buffer);
-			r.buffer.clear();
-			
-			this.jsonMetaManager = new JsonMetaManager(r);
-			this.jsonMetas = jsonMetaManager.jsonMetas;
-			
-			JsonFileImpl[] files = stream(jsonMetas).filter(Objects::nonNull).map(m -> m.jsonfile).toArray(JsonFileImpl[]::new);
-			sort(files, comparingLong(j -> jsonMetas[j.id].lastmodified < 0 ? Long.MAX_VALUE : jsonMetas[j.id].lastmodified));
-			this.files = unmodifiableList(asList(files));
-			
-			success = true;
-		} finally {
-			if(!success)
-				smallfile.close();
+		} else {
+			fresh = true;
 		}
 
-		this.jumbofile = new TextInFile(jumbofile_path, createIfNotExist);
+		if(fresh) {
+			Files.createDirectories(MYDIR);
+			this.jsonMetaManager = new JsonMetaManager();
+			this.smallfile = new TextInFile(smallfile_path, true);
+			this.jumbofile = new TextInFile(jumbofile_path, true);
+		} else {
+			this.smallfile = new TextInFile(smallfile_path, false);
+			boolean success = false;
+			MetaType[] array = MetaType.values();
+
+			try(StringResources r = StringResources.get();
+					FileChannel fc = FileChannel.open(metatype_path, StandardOpenOption.READ)) {
+
+				readDataMetasByCount(fc, 0, array.length, r.buffer, (id, d) -> metaTypes.put(array[id], d));
+
+				this.jsonMetaManager = new JsonMetaManager(smallfile, r);
+				this.jumbofile = new TextInFile(jumbofile_path, false);
+				success = true;
+			} finally {
+				if(!success) {
+					try {
+						smallfile.close();
+					} catch (Exception e) {
+						logger.error("failed to close smallfile {}", smallfile_path, e);
+					}
+				}
+			}
+		}
+
+		JsonMeta[] jsonMetas = jsonMetaManager.jsonMetas;
+
+		JsonFileImpl[] files = stream(jsonMetas).filter(Objects::nonNull).map(m -> m.jsonfile).toArray(JsonFileImpl[]::new);
+		sort(files, comparingLong(j -> jsonMetas[j.id].lastmodified < 0 ? Long.MAX_VALUE : jsonMetas[j.id].lastmodified));
+		this.files = unmodifiableList(asList(files));
 	}
+
+
 
 	private Path resolve(String s) {
 		return MYDIR.resolve(s);
 	}
-	private Path metasPath() {
-		return resolve("metas");
-	}
 
-	static final int JSON_META_BYTES =
-			IB + // id
-			LB + // last-modified
-			(LB + IB) * 2 // two DataMetas
-			;
 	static final long POS = (MetaType.values().length + 2) * DATA_BYTES;
 
-	private class JsonMetaManager {
-		private final boolean newFound;
-		private final JsonMeta[] jsonMetas;
-		
-		public JsonMetaManager(StringResources r) throws IOException {
-			ByteBuffer buffer = r.buffer;
-			StringBuilder sb = r.sb();
-			
-			DataMeta dm = metaTypes.get(MetaType.JSON_FILE_PATH);
-			Map<Integer, Path> idPathMap;
-			
-			if(dm == null || dm.position == 0 || dm.size == 0)
-				idPathMap = emptyMap();
-			else {
-				smallfile.readText(dm, buffer, r.chars, r.decoder, sb);
-				
-				if(isNotEmptyTrimmed(sb))
-					idPathMap = emptyMap(); 
-				else {
-					idPathMap = new HashMap<>();
-					int n = 0;
-					Iterator<String> array = new StringSplitIterator(sb, '\t');
-					
-					while (array.hasNext()) {
-						String s = array.next();
-						idPathMap.put(n++, isEmptyTrimmed(s) ? null : snippetDir.resolve(s));
-					}
-				}
-			}
-			
-			Iterator<Path> json_files = walk(snippetDir).iterator();
-
-			if(!idPathMap.isEmpty()) 
-				idPathMap.values().removeIf(Checker::notExists);
-
-			List<Path> newJsons = null;
-			Map<Path, JsonMeta> result = read(r.buffer, idPathMap);
-
-			if(isEmpty(result)) {
-				result = emptyMap();
-				idPathMap = emptyMap();
-			}
-
-			while (json_files.hasNext()) {
-				Path f = json_files.next();
-				JsonMeta meta = result.get(f);
-
-				if(meta != null && meta.lastmodified != f.toFile().lastModified()) {
-					logger.warn("reset JsonFileImpl: lastmodified({} -> {}), path: \"{}\"", meta.lastmodified, f.toFile().lastModified(), subpath(f));
-					meta = null;
-					result.remove(f);
-				}
-
-				if(meta == null) {
-					if(newJsons == null)
-						newJsons = new ArrayList<>();
-					newJsons.add(f);
-				}
-			}
-
-			this.newFound = isNotEmpty(newJsons);
-
-			if(newFound) {
-				BitSet setIds = new BitSet();
-				result.forEach((p, m) -> setIds.set(m.jsonfile.id));
-				int nextId = 0;
-
-				for (Path p : newJsons) {
-					int id = 0;
-					while(setIds.get(id = nextId++)) {}
-
-					String subpath = subpath(p).toString();
-
-					result.put(p, new JsonMeta(new JsonFileImpl(id, p, JsonManagerImpl.this)));
-					logger.info("new JsonFileImpl id: {}: %SNIPPET_DIR%\\{}", id, subpath);
-				}
-			}
-
-			this.jsonMetas = new JsonMeta[result.isEmpty() ? 0 : result.values().stream().mapToInt(m -> m.jsonfile.id).max().getAsInt() + 1];
-			result.forEach((s,m) -> this.jsonMetas[m.jsonfile.id] = m);
-		}
-
-		WriteMeta close(FileChannel fc, StringResources r, long pos) throws IOException {
-			IOUtils.ensureCleared(r.buffer);
-			
-			if(newFound) {
-				StringBuilder sb = r.sb();
-				sb.setLength(0);
-				
-				for (JsonMeta m : jsonMetas) 
-					sb.append(subpath(m.jsonfile.source)).append('\t');
-				
-				DataMeta d = smallfile.write(sb, r.encoder, r.buffer);
-				metaTypes.put(MetaType.JSON_FILE_PATH, d);
-				
-				sb.setLength(0);
-				r.buffer.clear();
-				r.chars.clear();
-			}
-			
-			ByteBuffer buf = r.buffer;
-			WriteMeta w = new WriteMeta(pos);
-
-			for (JsonMeta m : jsonMetas) {
-				if(buf.remaining() < JSON_META_BYTES)
-					w.write(buf, fc, true);
-
-				buf.putInt(m.jsonfile.id)
-				.putLong(m.lastmodified)
-				.putLong(m.meta == null ? 0 : m.meta.position)
-				.putInt(m.meta == null ? 0 : m.meta.size);
-			}
-
-			w.write(buf, fc, true);
-			assertTrue(w.size == jsonMetas.length * JSON_META_BYTES, () -> String.format("w.size (%s) == jsonMetas.length (%s) * JSON_META_BYTES (%s) = %s", w.size, jsonMetas.length, JSON_META_BYTES, jsonMetas.length * JSON_META_BYTES));
-			
-			metaTypes.put(MetaType.JSON_META_MANAGER, new DataMeta(w.init_pos, w.size));
-			return w;
-		}
-
-		public Map<Path, JsonMeta> read(ByteBuffer buffer, Map<Integer, Path> idPathMap) throws IOException {
-			DataMeta dm;
-
-			if(isEmpty(idPathMap)) {
-				return emptyMap();
-			} else {
-				dm = metaTypes.get(MetaType.JSON_META_MANAGER);
-				if(dm == null)
-					return emptyMap();
-			}
-
-			IOUtils.ensureCleared(buffer);
-			Map<Path, JsonMeta> result = new HashMap<>(); 
-
-			smallfile.read(dm, buffer, b -> {
-				while(b.remaining() >= JSON_META_BYTES) {
-					int id = b.getInt();
-					Path source = idPathMap.remove(id);
-					if(source == null) 
-						logger.warn("no source found for id: {}", id);
-					else {
-						JsonMeta meta = new JsonMeta(new JsonFileImpl(id, source, JsonManagerImpl.this));
-						meta.lastmodified = b.getLong();
-						meta.meta = new DataMeta(b.getLong(), b.getInt());
-						result.put(source, meta);	
-					}
-				}
-				compactOrClear(b);
-			});
-			return result;
-		}
-	}
-
-	private class MetasManager {
-		private final DataMeta[] metas;
-		private DataMeta[] metas_new;
-		private int _nextId = 0;
-		private int _mod = 0;
-		private int META_BYTES = IB + IB; // non-null count, max_non_id
-		
-		public MetasManager(FileChannel fc, ByteBuffer buffer) throws IOException {
-			DataMeta dm = metaTypes.get(MetaType.METAS_MANAGER);
-			if(dm == null || dm.size == 0) {
-				metas = new DataMeta[0];
-				metas_new = new DataMeta[0];
-			} else {
-				ensureCleared(buffer);
-				buffer.limit(META_BYTES);
-				
-				long pos = dm.position;
-				
-				if(fc.read(buffer, pos) < META_BYTES)
-					throw new IOException();
-				
-				pos += META_BYTES;
-				buffer.flip();
-				int count = buffer.getInt();
-				int maxId = buffer.getInt();
-				
-				assertTrue(maxId < 10000);
-				
-				buffer.clear();
-				this.metas = new DataMeta[maxId + 1];
-				
-				if(count != 0) {
-					int c[] = {0};
-					
-					Utils.readDataMetasBySize(fc, pos, dm.size - META_BYTES, buffer, (id, d) -> {
-						c[0]++;
-						this.metas[id] = d;
-					});
-					assertTrue(c[0] == count);
-				}
-			}
-		}
-
-		public List<TemplateImpl> getTemplates(JsonFileImpl json) throws IOException {
-			DataMeta dm = jsonMetas[json.id].meta;
-
-			if(dm == null)
-				return null;
-			else {
-				if(dm.size == 0)
-					return (dm.position == 0 ? null : new ArrayList<>());
-
-				try(StringResources r = StringResources.get()) {
-					Iterator<String> itr = readArray(dm, smallfile, r, '\t');
-					Objects.requireNonNull(itr);
-
-					ArrayList<TemplateImpl> result = new ArrayList<>();
-					while(itr.hasNext()) 
-						result.add(json.template(Integer.parseInt(itr.next()), itr.next(), itr.next()));
-
-					return result;
-				}
-			}
-		}
-
-		public void set(int id, DataMeta d) {
-			_mod++;
-
-			if(id < metas.length)
-				metas[id] = d;
-			else {
-				if(id - metas.length >= metas_new.length) {
-					DataMeta[] ds = new DataMeta[Math.max(metas_new.length * metas_new.length/4, 20)];
-					System.arraycopy(metas_new, 0, ds, 0, metas_new.length);
-					
-					logger.debug("templates_new.length({} -> {})", metas_new.length, ds.length);
-					metas_new = ds;
-				}
-				
-				metas_new[id - metas.length] = d;
-			}
-			
-			logger.debug("set DataMeta -> id: {}, meta: {}", id, d);
-		}
-
-		private DataMeta meta(int id) {
-			if(id < metas.length)
-				return metas[id];
-			else if(id - metas.length < metas_new.length)
-				return metas_new[id - metas.length];
-			else
-				return null;
-		}
-
-		public int nextId() {
-			while(meta(_nextId++) != null) {}
-			return _nextId - 1; 
-		}
-
-		public WriteMeta close(FileChannel fc, ByteBuffer buf, long minPos) throws IOException {
-			WriteMeta w = new WriteMeta(minPos + 50);
-			ensureCleared(buf);
-			int maxId = 0;
-			
-			if(metas_new.length == 0)
-				maxId = metas.length - 1;
-			else {
-				for (int i = metas_new.length; i >= 0; i--) {
-					if(metas_new[i] != null) {
-						maxId = i;
-						break;
-					}
-				}
-			}
-			
-			if(maxId < metas.length)
-				metas_new = new DataMeta[0];
-			
-			int count = count(metas) + count(metas_new);
-			buf.limit(META_BYTES);
-			
-			buf
-			.putInt(count)
-			.putInt(maxId < 0 ? 0 : maxId);
-			
-			w.write(buf, fc, true);
-			
-			int mi = maxId;
-			WriteMeta w2 = Utils.writeDataMetas(w.pos, fc, buf, new Provider() {
-				int id = 0;
-				DataMeta dm;
-				@Override
-				public boolean next() throws IOException {
-					if(id > mi)
-						return false;
-					
-					while((dm = meta(id++)) == null && id <= mi) {}
-					return dm != null;
-				}
-				@Override
-				public int id() {
-					return id - 1;
-				}
-				@Override
-				public DataMeta dataMeta() {
-					return dm;
-				}
-			});
-			
-			WriteMeta r = new WriteMeta(w.init_pos);
-			r.pos = w2.pos;
-			r.size = w2.size + w.size;
-			
-			assertTrue(r.size == count * DATA_BYTES );
-			metaTypes.put(MetaType.METAS_MANAGER, new DataMeta(w.init_pos, w.size));
-			return r;
-		}
-
-		private int count(DataMeta[] metas) {
-			if(metas.length == 0)
-				return 0;
-			int n = 0;
-			for (DataMeta d : metas) {
-				if(d != null)
-					n++;
-			}
-			return n;
-		}
-	}
-
-	@Override
 	public void close() throws IOException {
 		Junk.notYetImplemented();
-		
+
 		jumbofile.close();
-		final DataMeta ZERO = new DataMeta(0, 0);
 
 		//FIXME
 		//check if were there any changes to save in metasPath()
-		
+
 		if(Junk.<Boolean>notYetImplemented()) { 
 			try(StringResources r = StringResources.get();
 					FileChannel fc = FileChannel.open(metasPath(), WRITE)) {
 				//TODO
 				WriteMeta w = jsonMetaManager.close(fc, r, POS);
-				w = metasManager.close(fc, r.buffer, w.pos);
-				
+				w = metasManager.close(r);
+
 				smallfile.close();
 
 				WriteMeta dm = writeDataMetas(0, fc, r.buffer, new Provider() {
@@ -531,6 +231,28 @@ public class JsonManagerImpl implements Closeable, JsonManager, JsonLoader {
 					}
 				});
 				assertTrue(dm.size == MetaType.values().length * DATA_BYTES, () -> "dm.size("+dm.size+") == mtypes.length("+MetaType.values().length+") * DATA_BYTES("+DATA_BYTES+") = "+(MetaType.values().length * DATA_BYTES));
+			}
+		}
+	}
+
+	public List<TemplateImpl> getTemplates(JsonFileImpl json) throws IOException {
+		DataMeta dm = jsonMetas[json.id].meta;
+
+		if(dm == null)
+			return null;
+		else {
+			if(dm.size == 0)
+				return (dm.position == 0 ? null : new ArrayList<>());
+
+			try(StringResources r = StringResources.get()) {
+				Iterator<String> itr = readArray(dm, smallfile, r, '\t');
+				Objects.requireNonNull(itr);
+
+				ArrayList<TemplateImpl> result = new ArrayList<>();
+				while(itr.hasNext()) 
+					result.add(json.template(Integer.parseInt(itr.next()), itr.next(), itr.next()));
+
+				return result;
 			}
 		}
 	}
@@ -572,7 +294,7 @@ public class JsonManagerImpl implements Closeable, JsonManager, JsonLoader {
 	public void transfer(List<DataMeta> metas, WritableByteChannel channel) throws IOException {
 		jumbofile.transferTo(metas, channel);
 	}
-	
+
 	public List<TemplateImpl> loadTemplates(JsonFileImpl json) throws IOException {
 		List<TemplateImpl> list = metasManager.getTemplates((JsonFileImpl)json);
 		return list == null ? parseJson(json) : list;
@@ -594,24 +316,15 @@ public class JsonManagerImpl implements Closeable, JsonManager, JsonLoader {
 				@Override
 				public JSONObject put(String key, Object value) throws JSONException {
 					super.put(key, value);
-					if(has(key)) {
-						TemplateImpl t = json.template(metasManager.nextId(), key, (JSONObject)value);
-
-						try {
-							json.writeCache(t, sw, r);
-						} catch (IOException e) {
-							throw new JSONException(e);
-						}
-						templates.add(t);
-					}
+					if(has(key)) 
+						templates.add(json.template(templates.size(), key, (JSONObject)value));
 					return this;
 				}
 			};
-
-			jsonMetas[json.id].templatesLoaded = true;
+			
+			jsonMetaManager.jsonMetas(json).templatesLoaded = true;
 			logger.info("loaded json({}): {}", ANSI.yellow(templates.size()), json);
 		}
-
 		return templates;
 	}
 
@@ -619,4 +332,45 @@ public class JsonManagerImpl implements Closeable, JsonManager, JsonLoader {
 	public Path subpath(Path source) {
 		return source.subpath(SNIPPET_DIR_COUNT, source.getNameCount());
 	}
+
+	private class JsonMetaManager2 extends JsonMetaManager {
+		public JsonMetaManager2() throws IOException {
+			super();
+		}
+		public JsonMetaManager2(TextInFile smallfile, StringResources r) throws IOException {
+			super(smallfile, r);
+		}
+		@Override
+		protected Path snippetDir() {
+			return snippetDir;
+		}
+		@Override
+		protected JsonLoader loader() {
+			return JsonManagerImpl.this;
+		}
+		@Override
+		protected DataMeta metaTypes(MetaType key) {
+			return metaTypes.get(key);
+		}
+		@Override
+		protected void metaTypes(MetaType key, DataMeta value) {
+			metaTypes.put(key, value);
+		}
+		@Override
+		protected Path subpath(Path f) {
+			return JsonManagerImpl.this.subpath(f);
+		}
+		@Override
+		protected JsonMeta jsonMeta(JsonFileImpl json, long lastmodified, DataMeta textMeta, DataMeta datametaMeta) {
+			JsonMeta m = new JsonMeta(json);
+			m.lastmodified = lastmodified;
+			m.names_meta = textMeta;
+			m.data_meta = datametaMeta;
+					
+			return m;
+		}
+		
+		
+	}
+
 }

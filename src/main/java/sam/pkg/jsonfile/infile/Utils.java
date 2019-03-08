@@ -7,7 +7,6 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.channels.FileLock;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Iterator;
 import java.util.Objects;
@@ -23,6 +22,7 @@ import sam.string.StringSplitIterator;
 
 interface Utils {
 	static final Logger logger = LoggerFactory.getLogger(Utils.class);
+	static final DataMeta ZERO = new DataMeta(0, 0);
 
 	public static Iterator<String> readArray(DataMeta d, TextInFile file, StringResources r, char delimeter) throws IOException {
 		if(d == null || d.size == 0)
@@ -138,5 +138,21 @@ interface Utils {
 		
 		w.write(buffer, fc, true);
 		return w;
+	}
+	
+	static DataMeta readMeta(ByteBuffer b) {
+		long pos = b.getLong();
+		int size = b.getInt();
+				
+		return pos == 0 && size == 0 ? ZERO : new DataMeta(pos, size);
+	}
+	
+	static void putMeta(DataMeta d, ByteBuffer buf) {
+		if(d == null)
+			d = ZERO;
+		
+		buf
+		.putLong(d.position)
+		.putInt(d.size);
 	}
 }
