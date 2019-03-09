@@ -148,7 +148,7 @@ public class JsonManagerImpl implements Closeable, JsonManager, JsonLoader {
 
 		if(fresh) {
 			Files.createDirectories(MYDIR);
-			this.jsonMetaManager = new JsonMetaManager();
+			this.jsonMetaManager = new JsonMetaManager2();
 			this.smallfile = new TextInFile(smallfile_path, true);
 			this.jumbofile = new TextInFile(jumbofile_path, true);
 		} else {
@@ -161,7 +161,7 @@ public class JsonManagerImpl implements Closeable, JsonManager, JsonLoader {
 
 				readDataMetasByCount(fc, 0, array.length, r.buffer, (id, d) -> metaTypes.put(array[id], d));
 
-				this.jsonMetaManager = new JsonMetaManager(smallfile, r);
+				this.jsonMetaManager = new JsonMetaManager2(smallfile, r);
 				this.jumbofile = new TextInFile(jumbofile_path, false);
 				success = true;
 			} finally {
@@ -175,11 +175,7 @@ public class JsonManagerImpl implements Closeable, JsonManager, JsonLoader {
 			}
 		}
 
-		JsonMeta[] jsonMetas = jsonMetaManager.jsonMetas;
-
-		JsonFileImpl[] files = stream(jsonMetas).filter(Objects::nonNull).map(m -> m.jsonfile).toArray(JsonFileImpl[]::new);
-		sort(files, comparingLong(j -> jsonMetas[j.id].lastmodified < 0 ? Long.MAX_VALUE : jsonMetas[j.id].lastmodified));
-		this.files = unmodifiableList(asList(files));
+		this.files = unmodifiableList(asList(jsonMetaManager.toFiles()));
 	}
 
 
