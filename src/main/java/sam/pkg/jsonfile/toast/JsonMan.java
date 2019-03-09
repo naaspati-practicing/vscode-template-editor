@@ -11,6 +11,7 @@ import java.util.stream.Collectors;
 
 import org.json.JSONObject;
 
+import sam.nopkg.Junk;
 import sam.pkg.jsonfile.api.JsonFile;
 import sam.pkg.jsonfile.api.JsonManager;
 import sam.pkg.jsonfile.api.Template;
@@ -84,6 +85,12 @@ public class JsonMan implements JsonManager {
 		@Override
 		public void save() {
 			// TODO Auto-generated method stub
+		}
+
+		@Override
+		public JsonFile parent() {
+			// TODO Auto-generated method stub
+			return Junk.notYetImplemented();
 		}
 	}
 	

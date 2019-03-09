@@ -16,4 +16,5 @@ public interface Template {
 	void description(String s);
 	void body(String s);
 	void save() throws IOException;
+	JsonFile parent();
 }

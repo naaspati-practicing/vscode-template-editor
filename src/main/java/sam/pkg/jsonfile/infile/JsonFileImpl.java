@@ -392,7 +392,7 @@ class JsonFileImpl implements JsonFile {
 			return Objects.equals(id, other.id);
 		}
 
-		private JsonFileImpl parent() {
+		public JsonFileImpl parent() {
 			return JsonFileImpl.this;
 		}
 		@Override

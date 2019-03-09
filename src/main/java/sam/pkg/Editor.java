@@ -1,4 +1,5 @@
 package sam.pkg;
+import java.io.IOException;
 import java.util.IdentityHashMap;
 import java.util.Map;
 import java.util.Objects;
@@ -27,12 +28,12 @@ import javafx.scene.layout.GridPane;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.RowConstraints;
 import javafx.scene.text.Text;
+import sam.fx.alert.FxAlert;
 import sam.fx.helpers.FxButton;
 import sam.fx.helpers.FxConstants;
 import sam.fx.helpers.FxGridPane;
 import sam.fx.helpers.FxHBox;
 import sam.fx.helpers.FxText;
-import sam.fx.helpers.IconButton;
 import sam.pkg.jsonfile.api.Template;
 
 public class Editor extends BorderPane  {
@@ -244,8 +245,12 @@ public class Editor extends BorderPane  {
 			current.body(body());
 			current.description(desp());
 
-			current.save();
-			history.update();
+			try {
+				current.save();
+				history.update();
+			} catch (IOException e1) {
+				FxAlert.showErrorDialog(current.parent().source()+"\n"+current+"\n", "failed to save", e1);
+			}
 		}
 
 		history.mod = 0;
