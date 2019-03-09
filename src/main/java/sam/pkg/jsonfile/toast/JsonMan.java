@@ -1,9 +1,8 @@
 package sam.pkg.jsonfile.toast;
 
 import java.io.IOException;
-import java.nio.file.Files;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
-import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -11,7 +10,6 @@ import java.util.function.BiConsumer;
 import java.util.stream.Collectors;
 
 import org.json.JSONObject;
-import org.json.JSONTokener;
 
 import sam.pkg.jsonfile.api.JsonFile;
 import sam.pkg.jsonfile.api.JsonManager;
@@ -26,7 +24,7 @@ public class JsonMan implements JsonManager {
 		this.snippetDir = snippetDir;
 		this.count = snippetDir.getNameCount();
 		
-		files = walk(snippetDir).map(JFile::new).collect(Collectors.toList());
+		files = JsonManager.walk(snippetDir).map(JFile::new).collect(Collectors.toList());
 	}
 
 	@Override
@@ -116,19 +114,15 @@ public class JsonMan implements JsonManager {
 			}
 			
 			try {
-				JSONObject obj = new JSONObject(new JSONTokener(Files.newInputStream(source, StandardOpenOption.READ)));
-				List<Template> tmp = new ArrayList<>();
-				
-				obj.keySet().forEach(s -> tmp.add(new TMP(s, obj.getJSONObject(s))));
-				
-				this.list = Collections.unmodifiableList(tmp);
-				consumer.accept(list, null);
-			} catch (Throwable e) {
+				this.list = new ArrayList<>();
+				parseJson(source, StandardCharsets.UTF_8, (order, key, json) -> list.add(new TMP(key, json)));
+			} catch (Exception e) {
 				this.e = e;
-				consumer.accept(null, e);
+				this.list = null;
 			}
+			
+			consumer.accept(list, e);
 		}
-		
 	}
 
 }

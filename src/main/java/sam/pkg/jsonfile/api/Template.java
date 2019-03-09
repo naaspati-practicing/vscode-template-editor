@@ -1,5 +1,7 @@
 package sam.pkg.jsonfile.api;
 
+import java.io.IOException;
+
 public interface Template {
 	static final String PREFIX = "prefix";
 	static final String BODY = "body";
@@ -13,6 +15,5 @@ public interface Template {
 	void prefix(String s);
 	void description(String s);
 	void body(String s);
-	void save();
-
+	void save() throws IOException;
 }

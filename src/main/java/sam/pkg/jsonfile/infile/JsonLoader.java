@@ -13,7 +13,6 @@ interface JsonLoader {
 	Path subpath(Path p);
 	List<TemplateImpl> loadTemplates(JsonFileImpl jsonFile) throws IOException;
 	StringBuilder loadText(TemplateImpl template, StringResources r) throws IOException;
-	DataMeta meta(TemplateImpl t);
 	void transfer(List<DataMeta> metas, WritableByteChannel channel) throws IOException;
-	void write(TemplateImpl t, CharSequence sb, StringResources r) throws IOException;
+	void write(JsonFileImpl json, TemplateImpl t, CharSequence sb, StringResources r) throws IOException;
 }

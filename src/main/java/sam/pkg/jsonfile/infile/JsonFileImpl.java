@@ -4,7 +4,6 @@ import static java.nio.charset.CodingErrorAction.REPORT;
 import static java.nio.file.StandardOpenOption.TRUNCATE_EXISTING;
 import static java.nio.file.StandardOpenOption.WRITE;
 import static sam.myutils.Checker.isEmptyTrimmed;
-import static sam.myutils.Checker.isNotEmpty;
 
 import java.io.IOException;
 import java.io.Reader;
@@ -13,7 +12,6 @@ import java.nio.CharBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
@@ -25,14 +23,12 @@ import org.json.JSONTokener;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import sam.console.ANSI;
 import sam.io.IOUtils;
 import sam.io.infile.DataMeta;
 import sam.io.serilizers.StringIOUtils;
 import sam.nopkg.StringResources;
 import sam.pkg.jsonfile.api.JsonFile;
 import sam.pkg.jsonfile.api.Template;
-import sam.pkg.jsonfile.infile.JsonManagerImpl.JsonMeta;
 import sam.string.StringWriter2;
 import sam.string.SubSequence;
 class JsonFileImpl implements JsonFile {
@@ -41,14 +37,12 @@ class JsonFileImpl implements JsonFile {
 	private List<TemplateImpl> templates;
 	private List<Template> ummodifiable_templates;
 	private Throwable error;
-	
-	private int json_mod;
-	private int template_mode;
-	
+
 	public final Path source;
 	public final int id;
 	private boolean saved;
-	
+	boolean prefix_modified;
+
 	private final JsonLoader manager;
 
 	JsonFileImpl(int id, Path source, JsonLoader manager) {
@@ -56,7 +50,7 @@ class JsonFileImpl implements JsonFile {
 		this.id = id;
 		this.source = source;
 	}
-	
+
 	@Override
 	public Path source() {
 		return source;
@@ -76,10 +70,6 @@ class JsonFileImpl implements JsonFile {
 		if(templates == null && error == null) {
 			try {
 				List<TemplateImpl> list = manager.loadTemplates(this);
-				
-				for (int i = 0; i < templates.size(); i++)  
-					templates.get(i).order = i;
-				
 				set(list, null);
 				LOGGER.info("loaded-templates: {}",  this);
 			} catch (IOException e) {
@@ -195,47 +185,21 @@ class JsonFileImpl implements JsonFile {
 
 	private boolean remove(TemplateImpl t) {
 		if(templates.remove(t)) {
-			json_mod++;
-			
+			prefix_modified = true;
+
 			if(LOGGER.isDebugEnabled())
 				LOGGER.debug("REMOVED: \n{}", t);
 			else
-				LOGGER.info("REMOVED: TemplateImpl[{}]", t.json_id);
-				
+				LOGGER.info("REMOVED: TemplateImpl[{}]", t.id);
+
 			return true;
 		}
 		return false;
 	}
-	
-	private void save(Collection<TemplateImpl> newData) {
-		json_mod++;
-		int n = json_mod;
-
-		if(isNotEmpty(newData)) {
-			for (TemplateImpl t : newData) {
-				templates.add(t.order, t);
-				json_mod++;
-				
-				if(LOGGER.isDebugEnabled())
-					LOGGER.debug("SET MODIFIED: \n{}", t);
-				else
-					LOGGER.info("SET MODIFIED: TemplateImpl[{}]", t.json_id);
-			}
-		}
-		if(n == json_mod)
-			return;
-		//FIXME
-	}
 
 	private static ByteBuffer START, END;
-	private int save_mod = 0;
 
-	public boolean save() throws IOException {
-		if(save_mod == json_mod) {
-			LOGGER.warn(ANSI.red("nothing to save: ")+source);
-			return false;
-		}
-
+	private boolean save() throws IOException {
 		try(FileChannel channel = FileChannel.open(source, WRITE, TRUNCATE_EXISTING);
 				StringResources r = StringResources.get();
 				) {
@@ -247,23 +211,24 @@ class JsonFileImpl implements JsonFile {
 
 			START.clear();
 			channel.write(START);
+			StringBuilder sb = r.sb();
+			StringWriter2 sw = new StringWriter2(sb);
 
 			if(!templates.isEmpty()) {
 				if(templates.size() > 1) {
 					List<DataMeta> metas = new ArrayList<>();
 					for (int i = 0; i < templates.size() - 1; i++) {
-						TemplateImpl t = templates.get(i); 
-						if(manager.meta(t) == null) 
-							writeCache(t, null, r);
+						TemplateImpl t = templates.get(i);
+						if(t.meta == null) 
+							writeCache(t, sw, r);
 
-						metas.add(manager.meta(t));
+						metas.add(t.meta);
 					} 
 					manager.transfer(metas, channel);	
 				}
 
-				StringBuilder sb = r.sb();
 				sb.setLength(0);
-				templates.get(templates.size() - 1).writeJson(new StringWriter2(sb));
+				templates.get(templates.size() - 1).writeJson(sw);
 				sb.append("\n}");
 
 				StringIOUtils.write(b -> IOUtils.write(b, channel, false), sb, r.encoder, r.buffer, REPORT, REPORT);
@@ -273,7 +238,7 @@ class JsonFileImpl implements JsonFile {
 				channel.write(END);
 			}
 		}
-		
+
 		this.saved = true;
 		return false;
 	}
@@ -289,7 +254,7 @@ class JsonFileImpl implements JsonFile {
 
 		t.writeJson(sw);
 		sw.append(",\n");
-		manager.write(t, sb, r);
+		manager.write(this, t, sb, r);
 		sw.clear();
 	}
 
@@ -297,36 +262,30 @@ class JsonFileImpl implements JsonFile {
 	private static final StringWriter2 templatesw = new StringWriter2();
 
 	public class TemplateImpl implements Comparable<TemplateImpl>, Template {
-		public final int id;
-		private int order;
-		private final String json_id;
+		private boolean modified;
+		private DataMeta meta;
+		private final int order;
+		private final String id;
 		private String prefix, body, description;
 
-		//create new
-		private TemplateImpl(int id, String json_id) {
-			this.json_id = json_id;
-			this.prefix = json_id;
-			this.body = json_id;
-			this.id = id;
-		}
-
 		// partial load
-		private TemplateImpl(int id, String json_id, String prefix) {
-			checkEmpty(json_id, "id");
+		private TemplateImpl(int order, String id, String prefix, DataMeta dm) {
+			checkEmpty(id, "id");
 
+			this.order = order;
 			this.id = id;
-			this.json_id = json_id;
 			this.prefix = prefix;
+			this.meta = dm;
 		}
 		private void checkEmpty(String value, String variable) {
 			if(isEmptyTrimmed(value))
 				throw new IllegalArgumentException("empty value for variable: "+variable+",  value: "+value);
 		}
-		private TemplateImpl(int id, String json_id, JSONObject json) {
-			checkEmpty(json_id, "id");
+		private TemplateImpl(int order, String id, JSONObject json) {
+			checkEmpty(id, "id");
 
 			loaded = true;
-			this.json_id = json_id;
+			this.order = order;
 			this.id = id;
 			this.prefix = json.getString(PREFIX);
 			this.body = json.getString(BODY);
@@ -334,7 +293,7 @@ class JsonFileImpl implements JsonFile {
 		}
 
 		private boolean loaded;
-		
+
 		private void load() {
 			if(loaded) return;
 			loaded = true;
@@ -350,7 +309,7 @@ class JsonFileImpl implements JsonFile {
 			this.body = json.getString(BODY);
 			this.description = json.optString(DESCRIPTION);
 
-			LOGGER.info("TemplateImpl loaded: {}", json_id);
+			LOGGER.info("TemplateImpl loaded: {}", id);
 		}
 
 		private void writeJson(StringWriter2 w) {
@@ -363,7 +322,7 @@ class JsonFileImpl implements JsonFile {
 				json.put(BODY, body);
 				json.put(DESCRIPTION, description);
 
-				JSONObject.quote(json_id, w);
+				JSONObject.quote(id, w);
 				w.append(':');
 				json.write(w, 4, 2);
 			} catch (IOException e) {
@@ -376,7 +335,7 @@ class JsonFileImpl implements JsonFile {
 			return order;
 		}
 		public String id() {
-			return json_id;
+			return id;
 		}
 		public String prefix() {
 			return prefix;
@@ -390,29 +349,32 @@ class JsonFileImpl implements JsonFile {
 			return description;
 		}
 		private String set(String old, String neew, String key) {
-			load();
+			if(Objects.equals(old, neew))
+				return old;
 
-			if(key != DESCRIPTION)
+			modified = true;
+
+			if(DESCRIPTION != key)
 				checkEmpty(neew, key);
 
-			if(!Objects.equals(old, neew)) {
-				template_mode++;
-				return neew;
-			}
-			return old;
+			prefix_modified = prefix_modified || PREFIX == key;
+			return neew;
 		}
 		public void prefix(String prefix) {
+			load();
 			this.prefix = set(this.prefix, prefix, PREFIX);
 		}
 		public void body(String body) {
+			load();
 			this.body = set(this.body, body, BODY);
 		}
 		public void description(String description) {
+			load();
 			this.description = set(this.description, description, DESCRIPTION);
 		}
 		@Override
 		public int hashCode() {
-			return json_id.hashCode();
+			return id.hashCode();
 		}
 		@Override
 		public boolean equals(Object obj) {
@@ -423,9 +385,16 @@ class JsonFileImpl implements JsonFile {
 			if (getClass() != obj.getClass())
 				return false;
 			TemplateImpl other = (TemplateImpl) obj;
-			return Objects.equals(json_id, other.json_id);
+
+			if(parent() != other.parent())
+				return false;
+
+			return Objects.equals(id, other.id);
 		}
 
+		private JsonFileImpl parent() {
+			return JsonFileImpl.this;
+		}
 		@Override
 		public String toString() {
 			synchronized (templatesw) {
@@ -448,18 +417,29 @@ class JsonFileImpl implements JsonFile {
 		public void remove() { 
 			JsonFileImpl.this.remove(this);
 		}
-
-		public void save() {
-			// TODO Auto-generated method stub
+		public boolean isModified() {
+			return modified;
 		}
-		
+		public void save() throws IOException {
+			if(!modified)
+				return;
+			meta = null;
+			JsonFileImpl.this.save();
+			modified = false;
+		}
+		void setMeta(DataMeta d) {
+			this.meta = d;
+			this.modified = false;
+		}
+		public DataMeta getMeta() {
+			return meta;
+		}
 	}
 
-	TemplateImpl template(int id, String json_id, String prefix) {
-		return new TemplateImpl(id, json_id, prefix);
+	TemplateImpl template(int order, String id, String prefix, DataMeta dataMeta) {
+		return new TemplateImpl(order, id, prefix, dataMeta);
 	}
-
-	public TemplateImpl template(int dmid, String key, JSONObject value) {
-		return new TemplateImpl(dmid, key, value);
+	public TemplateImpl template(int order, String key, JSONObject json) {
+		return new TemplateImpl(order, key, json);
 	}
 }
