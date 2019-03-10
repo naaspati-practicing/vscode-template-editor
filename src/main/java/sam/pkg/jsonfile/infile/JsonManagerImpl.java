@@ -54,14 +54,13 @@ public class JsonManagerImpl implements Closeable, JsonManager, JsonLoader {
 	final Path MYDIR;
 	private final List<JsonFile> files;
 	private BitSet jsonMetaMod = new BitSet();
-	private final Path snippetDir;
 	private final int SNIPPET_DIR_COUNT;
 	private final JsonMetaManager jsonMetaManager;
 
 	public JsonManagerImpl(Path snippetDir) throws Exception {
-		this.snippetDir = Objects.requireNonNull(snippetDir);
+		Objects.requireNonNull(snippetDir);
 		this.SNIPPET_DIR_COUNT = snippetDir.getNameCount();
-		if(Files.isDirectory(snippetDir))
+		if(!Files.isDirectory(snippetDir))
 			throw new FileNotFoundException("snippet dir not found: "+snippetDir);
 
 		this.MYDIR = AccessController.doPrivileged((PrivilegedExceptionAction<Path>)() -> {
@@ -69,6 +68,8 @@ public class JsonManagerImpl implements Closeable, JsonManager, JsonLoader {
 			Files.createDirectories(p);
 			return p;
 		});
+		
+		System.out.println(MYDIR);
 
 		Path jumbofile_path = resolve("jumbofile");
 		Path smallfile_path = resolve("smallfile");

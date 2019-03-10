@@ -6,11 +6,10 @@ import static java.nio.file.StandardOpenOption.WRITE;
 import static java.util.Arrays.sort;
 import static java.util.Arrays.stream;
 import static java.util.Comparator.comparingLong;
-import static org.junit.jupiter.api.Assertions.assertNull;
 import static sam.io.IOUtils.compactOrClear;
 import static sam.myutils.Checker.assertTrue;
 import static sam.myutils.Checker.isEmptyTrimmed;
-import static sam.myutils.Checker.isNotEmpty;
+import static sam.myutils.Checker.*;
 import static sam.pkg.jsonfile.infile.Utils.IB;
 import static sam.pkg.jsonfile.infile.Utils.LB;
 import static sam.pkg.jsonfile.infile.Utils.ZERO;
@@ -26,6 +25,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.BitSet;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
@@ -42,6 +42,7 @@ import sam.io.infile.DataMeta;
 import sam.io.serilizers.StringIOUtils;
 import sam.myutils.Checker;
 import sam.nopkg.StringResources;
+import sam.pkg.jsonfile.api.JsonFile;
 import sam.pkg.jsonfile.api.JsonManager;
 import sam.string.StringSplitIterator;
 
@@ -136,7 +137,7 @@ class JsonMetaManager implements Closeable {
 	}
 
 	private void writeNewCopy(StringResources r, FileChannel file0) throws IOException {
-		try(FileChannel file = file0 != null ? file0 : FileChannel.open(path, CREATE, WRITE);) {
+		try(FileChannel file = file0 != null ? file0 : FileChannel.open(path, CREATE, WRITE, READ);) {
 
 			file.truncate(0);
 			ByteBuffer buffer = r.buffer;
@@ -162,7 +163,6 @@ class JsonMetaManager implements Closeable {
 			.flip();
 
 			file.write(buffer, 0);
-
 			writeMetas(file, buffer);
 		}
 	}
@@ -171,6 +171,7 @@ class JsonMetaManager implements Closeable {
 		buffer.clear();
 		buffer.limit(IB);
 		file.read(buffer, 0);
+		buffer.flip();
 
 		int pos = buffer.getInt();
 		file.truncate(pos);
@@ -198,7 +199,7 @@ class JsonMetaManager implements Closeable {
 			return;
 		}
 
-		try(FileChannel file = FileChannel.open(path, READ)) {
+		try(FileChannel file = FileChannel.open(path, READ, WRITE)) {
 			final ByteBuffer buffer = r.buffer;
 			buffer.clear();
 
@@ -329,7 +330,7 @@ class JsonMetaManager implements Closeable {
 
 				for (Path p : newJsons) {
 					while(metas[n] != null) {n++;}
-					assertNull(metas[n]);
+					assertIsNull(metas[n]);
 
 					String subpath = p.subpath(snipCount, p.getNameCount()).toString();
 
@@ -354,7 +355,7 @@ class JsonMetaManager implements Closeable {
 	@Override
 	public void close() throws IOException {
 		if(mod != 0) {
-			try(FileChannel fc = FileChannel.open(path);
+			try(FileChannel fc = FileChannel.open(path, READ, WRITE);
 					StringResources r = StringResources.get()) {
 				writeMetas(fc, r.buffer);	
 			}
@@ -363,7 +364,8 @@ class JsonMetaManager implements Closeable {
 
 	public JsonFileImpl[] toFiles() {
 		JsonFileImpl[] files = stream(jsonMetas).filter(Objects::nonNull).map(m -> m.jsonfile).toArray(JsonFileImpl[]::new);
-		sort(files, comparingLong(j -> jsonMetas[j.id].lastmodified() < 0 ? Long.MAX_VALUE : jsonMetas[j.id].lastmodified()));
+		Comparator<JsonFileImpl> comparator = comparingLong(j -> jsonMetas[j.id].lastmodified() < 0 ? Long.MAX_VALUE : jsonMetas[j.id].lastmodified()); 
+		sort(files, comparator.reversed());
 		return files;
 	}
 }

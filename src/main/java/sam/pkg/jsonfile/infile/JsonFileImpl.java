@@ -288,8 +288,8 @@ class JsonFileImpl implements JsonFile {
 			this.order = order;
 			this.id = id;
 			this.prefix = json.getString(PREFIX);
-			this.body = json.getString(BODY);
-			this.description = (String)json.opt(DESCRIPTION);
+			this.body = json.optString(BODY);
+			this.description = json.optString(DESCRIPTION);
 		}
 
 		private boolean loaded;

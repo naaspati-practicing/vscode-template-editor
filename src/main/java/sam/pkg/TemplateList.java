@@ -1,14 +1,11 @@
 package sam.pkg;
 
-import javafx.beans.binding.Bindings;
-import javafx.beans.value.ObservableObjectValue;
 import javafx.event.Event;
 import javafx.fxml.FXML;
 import javafx.scene.Node;
 import javafx.scene.control.Button;
 import sam.fx.helpers.FxButton;
 import sam.fx.helpers.FxCell;
-import sam.pkg.jsonfile.api.JsonFile;
 import sam.pkg.jsonfile.api.Template;
 
 public class TemplateList extends ListView2<Template> {

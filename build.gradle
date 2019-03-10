@@ -14,6 +14,7 @@ version = '.002'
 ext.appdir = file(/C:\Users\Sameer\Documents\MEGAsync\SimpleUtils\sam\programs\template\app.beta\bin/)
 
 run {
+  systemProperties['java.io.tmpdir'] = 'java_temp'
   workingDir appdir.parent
 }
 
